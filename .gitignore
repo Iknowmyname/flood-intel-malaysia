@@ -1,0 +1,24 @@
+# Java / Maven
+target/
+*.class
+*.log
+hs_err_pid*.log
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Misc
+*.iml

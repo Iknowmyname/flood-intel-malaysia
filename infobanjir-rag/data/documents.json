@@ -1,0 +1,20 @@
+[
+  {
+    "id": "doc-001",
+    "title": "Rainfall readings overview",
+    "source": "local_demo",
+    "text": "Rainfall readings represent recent precipitation totals reported per station. Higher rain_mm values indicate heavier rainfall that may increase runoff risk."
+  },
+  {
+    "id": "doc-002",
+    "title": "Water level readings overview",
+    "source": "local_demo",
+    "text": "Water level readings represent river levels in meters at monitoring stations. Higher river_level_m values indicate elevated water levels that may signal flood risk."
+  },
+  {
+    "id": "doc-003",
+    "title": "Interpreting station data",
+    "source": "local_demo",
+    "text": "Station-based readings should be interpreted with location context such as district and state. A state summary can be formed by selecting the most relevant stations."
+  }
+]

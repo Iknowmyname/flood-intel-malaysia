@@ -1,0 +1,37 @@
+/* You can add global styles to this file, and also import other style files */
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --ink: #e6edf6;
+  --muted: #9aa7b8;
+  --primary: #4ea1ff;
+  --accent: #43e2ff;
+  --surface: #0b1220;
+  --card: #111a2b;
+  --shadow-soft: 0 14px 28px rgba(0, 0, 0, 0.35);
+  --outline: rgba(78, 161, 255, 0.18);
+  --panel: #0f172a;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(78, 161, 255, 0.18), transparent 45%),
+    radial-gradient(circle at 85% 0%, rgba(67, 226, 255, 0.14), transparent 45%),
+    radial-gradient(circle at 20% 90%, rgba(140, 82, 255, 0.14), transparent 50%),
+    linear-gradient(180deg, #0b1220 0%, #0a0f1b 100%);
+  min-height: 100vh;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  overflow-y: scroll;
+  padding-right: calc(100vw - 100%);
+}

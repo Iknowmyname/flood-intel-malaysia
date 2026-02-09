@@ -1,0 +1,64 @@
+<div class="app">
+  <aside class="rail">
+    <div class="brand-mark">H</div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo">H</span>
+        <span class="brand-text">HydroIntel MY</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="primary">
+        <h1>Explainable Flood Intelligence for Malaysia</h1>
+        <p class="lead">
+          Query real-time rainfall and river levels with transparent, explainable responses.
+        </p>
+
+        <div class="chat" #chatContainer>
+          <div class="status loading" *ngIf="loading">Contacting the API...</div>
+          <div class="status error" *ngIf="errorMsg">{{ errorMsg }}</div>
+
+          <div class="message assistant" *ngIf="loading">
+            <div class="bubble thinking">Thinking...</div>
+          </div>
+
+          <div class="message" *ngFor="let msg of messages" [class.user]="msg.role === 'user'">
+            <div class="bubble" [class.reveal]="msg.revealing">
+              <div class="content">{{ msg.content }}</div>
+              <div class="meta" *ngIf="msg.role === 'assistant' && msg.meta">
+                <span>Mode: {{ msg.meta.mode }}</span>
+                <span>Confidence: {{ msg.meta.confidence }}</span>
+                <span>Latency: {{ msg.meta.latencyMs }} ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="command-bar">
+      <form class="ask-form" (ngSubmit)="submit()">
+        <input
+          id="question"
+          name="question"
+          [(ngModel)]="question"
+          placeholder="Ask about rainfall or river levels (e.g. “Water level in Klang now”)"
+          type="text"
+        />
+        <button type="submit" [disabled]="!question.trim() || loading">
+          {{ loading ? 'Asking...' : 'Ask HydroIntel' }}
+        </button>
+      </form>
+      <div class="examples">
+        <span>Try:</span>
+        <button type="button" (click)="setQuestion('Rainfall in Kelantan today')">→ Rainfall in Kelantan today</button>
+        <button type="button" (click)="setQuestion('Current river level in Selangor')">→ Current river level in Selangor</button>
+        <button type="button" (click)="setQuestion('Latest rainfall report for Sabah')">→ Latest rainfall report for Sabah</button>
+      </div>
+    </div>
+  </div>
+</div>

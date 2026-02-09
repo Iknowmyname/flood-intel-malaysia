@@ -1,0 +1,139 @@
+package com.my.infobanjirintelligence.infobanjir_api.service;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
+
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import com.my.infobanjirintelligence.infobanjir_api.model.AskResponse;
+import com.my.infobanjirintelligence.infobanjir_api.model.RagAskResponse;
+
+
+@Service
+public class AskService {
+
+    private final ExpressApiClient expressApiClient;
+    private final RagClient ragClient;
+
+    @Value("${app.mode:auto}")
+    private String mode;
+
+    public AskService(ExpressApiClient expressApiClient, RagClient ragClient) {
+        this.expressApiClient = expressApiClient;
+        this.ragClient = ragClient;
+    }
+
+    public AskResponse handleQuestion(String question) {
+
+        if (question == null){
+            throw new IllegalArgumentException("Question is not valid !");
+        }
+
+        String requestId = MDC.get("correlationId");
+
+        if (requestId == null) {
+            requestId = UUID.randomUUID().toString();
+        }
+
+        Instant start = Instant.now();
+        String answer;
+        double confidence = 1.0;
+
+        try {
+            
+            switch (mode.toLowerCase()) {
+                case "rag" -> {
+                    // RAG mode which falls back to SQL mode in case of failure.
+                    try {
+                        answer = callRagService(question);
+                    } catch (Exception e) {
+                        answer = callSqlOnly(question);
+                    }
+                }
+                case "sql" -> answer = callSqlOnly(question);
+                default -> answer = callAuto(question);
+            }
+        } catch (Exception e) {
+            answer = "Service is temporarily unavailable";
+            confidence = 0.0;
+        }
+
+        long latencyMs = Duration.between(start, Instant.now()).toMillis();
+
+
+        return new AskResponse(
+            answer,
+            mode,
+            confidence,
+            latencyMs,
+            requestId,
+            Instant.now().toString()
+        );
+    }
+
+    private String callRagService(String question) {
+        RagAskResponse response = ragClient.ask(question);
+        if (response == null || response.answer() == null || response.answer().isBlank()) {
+            throw new IllegalStateException("RAG service returned empty answer");
+        }
+        return response.answer();
+    }
+
+
+    private String callSqlOnly(String question) {
+
+        String q = question == null ? "" : question.toLowerCase();
+        String state = StateParser.findState(question);
+        boolean wantsRain = q.contains("rain");
+        boolean wantsWaterLevel = q.contains("water level") || q.contains("river level");
+
+        if (wantsRain) {
+            var rainfall = expressApiClient.getLatestRainfall(state, 50).items();
+            if (rainfall.isEmpty()) {
+                return state == null
+                    ? "No recent rainfall readings are available."
+                    : "No recent rainfall readings are available for " + state + ".";
+            }
+            var top = rainfall.stream()
+                .filter(r -> r.rain_mm() != null)
+                .sorted((a, b) -> Double.compare(b.rain_mm(), a.rain_mm()))
+                .limit(3)
+                .toList();
+            String scope = state == null ? "Malaysia" : state;
+            String summary = top.stream()
+                .map(r -> r.station_name() + " (" + r.state() + ") " + r.rain_mm() + " mm")
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("No stations");
+            return "Top rainfall readings in " + scope + " (" + rainfall.size() + " stations): " + summary + ".";
+        }
+
+        if (wantsWaterLevel) {
+            var water = expressApiClient.getLatestWaterLevel(state, 50).items();
+            if (water.isEmpty()) {
+                return state == null
+                    ? "No recent water level readings are available."
+                    : "No recent water level readings are available for " + state + ".";
+            }
+            var top = water.stream()
+                .filter(w -> w.river_level_m() != null)
+                .sorted((a, b) -> Double.compare(b.river_level_m(), a.river_level_m()))
+                .limit(3)
+                .toList();
+            String scope = state == null ? "Malaysia" : state;
+            String summary = top.stream()
+                .map(w -> w.station_name() + " (" + w.state() + ") " + w.river_level_m() + " m")
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("No stations");
+            return "Top water level readings in " + scope + " (" + water.size() + " stations): " + summary + ".";
+        }
+
+        return "I can answer about rainfall or water level readings. Please ask about those.";
+    }
+
+    private String callAuto(String question) {
+        return "AUTO_MODE answer for :" + question;
+    }
+}
