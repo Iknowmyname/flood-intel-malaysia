@@ -48,7 +48,7 @@ class AskServiceTest {
             12.4,
             "DID"
         );
-        when(expressApiClient.getLatestRainfall(null, 50))
+        when(expressApiClient.getLatestRainfall("SEL", 50))
             .thenReturn(new RainfallResponse(List.of(reading)));
 
         AskResponse response = askService.handleQuestion("rain in selangor");
@@ -69,7 +69,7 @@ class AskServiceTest {
             12.4,
             "DID"
         );
-        when(expressApiClient.getLatestRainfall("Selangor", 50))
+        when(expressApiClient.getLatestRainfall("SEL", 50))
             .thenReturn(new RainfallResponse(List.of(reading)));
 
         AskResponse response = askService.handleQuestion("rain in Selangor");
@@ -88,7 +88,7 @@ class AskServiceTest {
             3.27,
             "DID"
         );
-        when(expressApiClient.getLatestWaterLevel(null, 50))
+        when(expressApiClient.getLatestWaterLevel("JHR", 50))
             .thenReturn(new WaterLevelResponse(List.of(reading)));
 
         AskResponse response = askService.handleQuestion("water level johor");
@@ -146,5 +146,35 @@ class AskServiceTest {
 
         assertThat(response.answer()).contains("No recent rainfall readings");
         assertThat(response.mode()).isEqualTo("rag");
+    }
+
+    @Test
+    void handleQuestion_auto_prefersSqlForNumericQueries() {
+        when(expressApiClient.getLatestWaterLevel("SEL", 50))
+            .thenReturn(new WaterLevelResponse(List.of()));
+        ReflectionTestUtils.setField(askService, "mode", "auto");
+
+        AskResponse response = askService.handleQuestion("average water level in Selangor");
+
+        assertThat(response.answer()).contains("No recent water level readings");
+        assertThat(response.mode()).isEqualTo("auto");
+    }
+
+    @Test
+    void handleQuestion_auto_usesRagForGeneralQuestions() {
+        var ragResponse = new RagAskResponse(
+            "RAG general answer",
+            List.of(new RagCitation("local", "snippet")),
+            0.6,
+            "req-2",
+            "2026-02-05T10:30:00.000Z"
+        );
+        when(ragClient.ask("what is flood risk")).thenReturn(ragResponse);
+        ReflectionTestUtils.setField(askService, "mode", "auto");
+
+        AskResponse response = askService.handleQuestion("what is flood risk");
+
+        assertThat(response.answer()).contains("RAG general answer");
+        assertThat(response.mode()).isEqualTo("auto");
     }
 }

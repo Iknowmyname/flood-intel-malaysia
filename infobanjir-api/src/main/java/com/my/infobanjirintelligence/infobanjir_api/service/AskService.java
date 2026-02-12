@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,8 @@ import com.my.infobanjirintelligence.infobanjir_api.model.RagAskResponse;
 
 @Service
 public class AskService {
+
+    private static final Logger log = LoggerFactory.getLogger(AskService.class);
 
     private final ExpressApiClient expressApiClient;
     private final RagClient ragClient;
@@ -27,6 +31,7 @@ public class AskService {
     }
 
     public AskResponse handleQuestion(String question) {
+        log.warn("AskService loaded from: {}", AskService.class.getProtectionDomain().getCodeSource().getLocation());
 
         if (question == null){
             throw new IllegalArgumentException("Question is not valid !");
@@ -92,7 +97,10 @@ public class AskService {
 
         if (wantsRain) {
             var rainfall = expressApiClient.getLatestRainfall(state, 50).items();
+            log.warn("SQL_ONLY rainfall: state={} items={}", state, rainfall.size());
+            System.out.println("SQL_ONLY rainfall: state=" + state + " items=" + rainfall.size());
             if (rainfall.isEmpty()) {
+                System.out.println("test");
                 return state == null
                     ? "No recent rainfall readings are available."
                     : "No recent rainfall readings are available for " + state + ".";
@@ -112,6 +120,8 @@ public class AskService {
 
         if (wantsWaterLevel) {
             var water = expressApiClient.getLatestWaterLevel(state, 50).items();
+            log.warn("SQL_ONLY water level: state={} items={}", state, water.size());
+            System.out.println("SQL_ONLY water level: state=" + state + " items=" + water.size());
             if (water.isEmpty()) {
                 return state == null
                     ? "No recent water level readings are available."
@@ -134,6 +144,19 @@ public class AskService {
     }
 
     private String callAuto(String question) {
-        return "AUTO_MODE answer for :" + question;
+        String q = question == null ? "" : question.toLowerCase();
+        boolean asksForNumbers = q.contains("average") || q.contains("latest") || q.contains("current");
+        boolean asksForRain = q.contains("rain");
+        boolean asksForWater = q.contains("water level") || q.contains("river level");
+
+        if (asksForNumbers || asksForRain || asksForWater) {
+            return callSqlOnly(question);
+        }
+
+        try {
+            return callRagService(question);
+        } catch (Exception e) {
+            return callSqlOnly(question);
+        }
     }
 }
