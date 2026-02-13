@@ -34,22 +34,25 @@ public final class StateParser {
         String q = question.toLowerCase();
         for (String state : STATES) {
             if (q.contains(state)) {
-                if (state.equals("penang") || state.equals("pulau pinang")) {
-                    return "Pulau Pinang";
-                }
-                if (state.equals("kuala lumpur")) {
-                    return "Kuala Lumpur";
-                }
-                if (state.equals("negeri sembilan")) {
-                    return "Negeri Sembilan";
-                }
-                if (state.equals("putrajaya")) {
-                    return "Putrajaya";
-                }
-                if (state.equals("labuan")) {
-                    return "Labuan";
-                }
-                return Character.toUpperCase(state.charAt(0)) + state.substring(1);
+                return switch (state) {
+                    case "johor" -> "JHR";
+                    case "kedah" -> "KED";
+                    case "kelantan" -> "KTN";
+                    case "melaka" -> "MLK";
+                    case "negeri sembilan" -> "NSN";
+                    case "pahang" -> "PHG";
+                    case "perak" -> "PRK";
+                    case "perlis" -> "PLS";
+                    case "pulau pinang", "penang" -> "PNG";
+                    case "sabah" -> "SBH";
+                    case "sarawak" -> "SWK";
+                    case "selangor" -> "SEL";
+                    case "terengganu" -> "TRG";
+                    case "kuala lumpur" -> "KUL";
+                    case "labuan" -> "LBN";
+                    case "putrajaya" -> "PTJ";
+                    default -> null;
+                };
             }
         }
         return null;
