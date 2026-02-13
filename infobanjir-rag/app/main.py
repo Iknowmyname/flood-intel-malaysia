@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from .config import RAG_MIN_SCORE, RAG_TOP_K, RAG_USE_LLM
 from .ingest import build_docs_from_rain, build_docs_from_water, fetch_express
-from .llm_client import call_ollama
+from .llm_client import call_ollama, check_ollama_health
 from .rag_context import build_context, build_summary_from_hits, infer_state_from_question
 from .rag_store import ingest_documents, load_documents, retrieve_keyword, retrieve_semantic_from_docs
 
@@ -55,6 +55,15 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "infobanjir-rag",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/health/llm")
+def health_llm() -> dict:
+    return {
+        "status": "ok" if check_ollama_health() else "unavailable",
+        "service": "ollama",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
