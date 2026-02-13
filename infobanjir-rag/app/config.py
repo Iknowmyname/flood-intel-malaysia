@@ -8,3 +8,4 @@ OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "20"))
 
 RAG_USE_LLM = True
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
+RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.25"))

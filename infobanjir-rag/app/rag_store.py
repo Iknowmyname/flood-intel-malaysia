@@ -82,16 +82,18 @@ def ensure_index() -> None:
         build_index(load_documents())
 
 
-def retrieve_semantic_from_docs(question: str, documents: list[dict], top_k: int) -> list[dict]:
+def retrieve_semantic_from_docs(question: str, documents: list[dict], top_k: int, min_score: float | None = None) -> list[dict]:
     index, docs = build_index_from_docs(documents)
     if index is None or not docs:
         return []
     qvec = embed_texts([question])
     k = min(top_k, len(docs))
-    _scores, idxs = index.search(qvec, k)
+    scores, idxs = index.search(qvec, k)
     hits = []
-    for idx in idxs[0]:
+    for score, idx in zip(scores[0], idxs[0]):
         if idx == -1:
+            continue
+        if min_score is not None and score < min_score:
             continue
         hits.append(docs[idx])
     return hits

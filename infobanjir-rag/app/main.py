@@ -5,7 +5,7 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from .config import RAG_TOP_K, RAG_USE_LLM
+from .config import RAG_MIN_SCORE, RAG_TOP_K, RAG_USE_LLM
 from .ingest import build_docs_from_rain, build_docs_from_water, fetch_express
 from .llm_client import call_ollama
 from .rag_context import build_context, build_summary_from_hits, infer_state_from_question
@@ -110,13 +110,13 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
                 doc for doc in documents
                 if str(doc.get("recorded_at", ""))[:10] == latest
             ]
-        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K)
+        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K, min_score=RAG_MIN_SCORE)
         if not hits:
             hits = retrieve_keyword(question, top_k=RAG_TOP_K)
     else:
         if state:
             documents = [doc for doc in documents if str(doc.get("state", "")).upper() == state]
-        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K)
+        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K, min_score=RAG_MIN_SCORE)
         if not hits:
             hits = retrieve_keyword(question, top_k=RAG_TOP_K)
 
