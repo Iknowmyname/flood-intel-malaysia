@@ -30,6 +30,26 @@ _CHROMA_CLIENT: Optional[chromadb.api.ClientAPI] = None
 _CHROMA_COLLECTION: Optional[Collection] = None
 
 
+def _build_where_clause(
+    state: str | None = None,
+    doc_type: str | None = None,
+    recorded_date: str | None = None,
+) -> dict | None:
+    clauses: list[dict] = []
+    if state:
+        clauses.append({"state": {"$in": get_state_synonyms(state)}})
+    if doc_type:
+        clauses.append({"type": doc_type})
+    if recorded_date:
+        clauses.append({"recorded_date": recorded_date})
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
 def _get_collection() -> Collection:
     global _CHROMA_CLIENT, _CHROMA_COLLECTION
     if _CHROMA_CLIENT is None:
@@ -140,19 +160,17 @@ def retrieve_semantic(
     min_score: float | None = None,
 ) -> list[dict]:
     collection = _get_collection()
-    where = {}
-    if state:
-        where["state"] = {"$in": get_state_synonyms(state)}
-    if doc_type:
-        where["type"] = doc_type
-    if recorded_date:
-        where["recorded_date"] = recorded_date
+    where = _build_where_clause(
+        state=state,
+        doc_type=doc_type,
+        recorded_date=recorded_date,
+    )
     candidate_k = top_k * 5 if (date_from or date_to) else top_k
     qvec = embed_texts([question])
     result = collection.query(
         query_embeddings=qvec,
         n_results=candidate_k,
-        where=where if where else None,
+        where=where,
         include=["documents", "metadatas", "distances"],
     )
     hits = []
