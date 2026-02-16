@@ -144,10 +144,11 @@ def retrieve_semantic(
         where["state"] = {"$in": get_state_synonyms(state)}
     if recorded_date:
         where["recorded_date"] = recorded_date
+    candidate_k = top_k * 5 if (date_from or date_to) else top_k
     qvec = embed_texts([question])
     result = collection.query(
         query_embeddings=qvec,
-        n_results=top_k,
+        n_results=candidate_k,
         where=where if where else None,
         include=["documents", "metadatas", "distances"],
     )
@@ -168,6 +169,8 @@ def retrieve_semantic(
             if date_to and doc_date > date_to:
                 continue
         hits.append(doc)
+        if len(hits) >= top_k:
+            break
     return hits
 
 
