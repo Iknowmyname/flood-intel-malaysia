@@ -2,7 +2,9 @@ package com.my.infobanjirintelligence.infobanjir_api.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,10 +114,10 @@ public class AskService {
                 .toList();
             String scope = state == null ? "Malaysia" : state;
             String summary = top.stream()
-                .map(r -> r.station_name() + " (" + r.state() + ") " + r.rain_mm() + " mm")
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("No stations");
-            return "Top rainfall readings in " + scope + " (" + rainfall.size() + " stations): " + summary + ".";
+                .map(r -> r.station_name() + " (" + r.state() + ") at " + formatDecimal(r.rain_mm()) + " mm")
+                .collect(Collectors.joining(", "));
+            return "In " + scope + ", based on " + rainfall.size() + " recent stations, "
+                + "the highest rainfall readings are " + summary + ".";
         }
 
         if (wantsWaterLevel) {
@@ -134,10 +136,10 @@ public class AskService {
                 .toList();
             String scope = state == null ? "Malaysia" : state;
             String summary = top.stream()
-                .map(w -> w.station_name() + " (" + w.state() + ") " + w.river_level_m() + " m")
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("No stations");
-            return "Top water level readings in " + scope + " (" + water.size() + " stations): " + summary + ".";
+                .map(w -> w.station_name() + " (" + w.state() + ") at " + formatDecimal(w.river_level_m()) + " m")
+                .collect(Collectors.joining(", "));
+            return "In " + scope + ", based on " + water.size() + " recent stations, "
+                + "the highest river levels are " + summary + ".";
         }
 
         return "I can answer about rainfall or water level readings. Please ask about those.";
@@ -158,5 +160,12 @@ public class AskService {
         } catch (Exception e) {
             return callSqlOnly(question);
         }
+    }
+
+    private String formatDecimal(Double value) {
+        if (value == null) {
+            return "n/a";
+        }
+        return String.format(Locale.US, "%.2f", value);
     }
 }
