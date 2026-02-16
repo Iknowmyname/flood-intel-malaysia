@@ -149,6 +149,24 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return vectors.tolist()
 
 
+def _count_candidates(
+    state: str | None = None,
+    doc_type: str | None = None,
+    recorded_date: str | None = None,
+) -> int:
+    documents = load_documents()
+    count = 0
+    for doc in documents:
+        if state and str(doc.get("state", "")).upper() not in get_state_synonyms(state):
+            continue
+        if doc_type and str(doc.get("type", "")).lower() != doc_type.lower():
+            continue
+        if recorded_date and str(doc.get("recorded_date", "")) != recorded_date:
+            continue
+        count += 1
+    return count
+
+
 def retrieve_semantic(
     question: str,
     top_k: int,
@@ -166,13 +184,25 @@ def retrieve_semantic(
         recorded_date=recorded_date,
     )
     candidate_k = top_k * 5 if (date_from or date_to) else top_k
-    qvec = embed_texts([question])
-    result = collection.query(
-        query_embeddings=qvec,
-        n_results=candidate_k,
-        where=where,
-        include=["documents", "metadatas", "distances"],
+    candidate_count = _count_candidates(
+        state=state,
+        doc_type=doc_type,
+        recorded_date=recorded_date,
     )
+    if candidate_count <= 0:
+        return []
+    n_results = min(candidate_k, candidate_count)
+    qvec = embed_texts([question])
+    try:
+        result = collection.query(
+            query_embeddings=qvec,
+            n_results=n_results,
+            where=where,
+            include=["documents", "metadatas", "distances"],
+        )
+    except RuntimeError:
+        # Guard against HNSW runtime errors when filtered candidate sets are tiny.
+        return []
     hits = []
     distances = (result.get("distances") or [[]])[0]
     metas = (result.get("metadatas") or [[]])[0]
