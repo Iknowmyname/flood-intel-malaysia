@@ -14,6 +14,7 @@ npm-debug.log*
 .venv/
 __pycache__/
 *.pyc
+infobanjir-rag/chroma/
 
 # OS / IDE
 .DS_Store
