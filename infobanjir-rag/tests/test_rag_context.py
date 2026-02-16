@@ -1,4 +1,4 @@
-from app.rag_context import build_context, format_state, infer_state_from_question
+from app.rag_context import build_context, build_summary_from_hits, format_state, infer_state_from_question
 
 
 def test_format_state_known_code():
@@ -21,3 +21,18 @@ def test_build_context_includes_state():
     ]
     context = build_context(hits)
     assert "State: Selangor (SEL)" in context
+
+
+def test_build_summary_from_flood_risk_hits():
+    hits = [
+        {
+            "type": "flood_risk",
+            "state": "SEL",
+            "value": 68.2,
+            "recorded_at": "2026-02-16T08:00:00Z",
+        }
+    ]
+    summary = build_summary_from_hits(hits)
+    assert "heuristic" in summary.lower()
+    assert "Selangor (SEL)" in summary
+    assert "68.2/100" in summary
