@@ -128,12 +128,10 @@ def rag_ingest(payload: RagIngestRequest) -> RagIngestResponse:
 def rag_ask(payload: RagAskRequest) -> RagAskResponse:
     documents = load_documents()
     question = payload.question or ""
-    q = question.lower()
     state = infer_state_from_question(question, documents)
     date_from, date_to = parse_date_range(question)
 
-    hits: list[dict] = []
-    hits = retrieve_semantic(
+    semantic_hits = retrieve_semantic(
         question,
         top_k=RAG_TOP_K,
         state=state,
@@ -141,14 +139,33 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
         date_to=date_to,
         min_score=RAG_MIN_SCORE,
     )
-    if not hits:
-        hits = retrieve_keyword(
-            question,
-            top_k=RAG_TOP_K,
-            state=state,
-            date_from=date_from,
-            date_to=date_to,
+    keyword_hits = retrieve_keyword(
+        question,
+        top_k=RAG_TOP_K,
+        state=state,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    # Hybrid retrieval keeps semantic ranking, then backfills with keyword-only hits.
+    combined_hits: list[dict] = []
+    seen = set()
+    for doc in semantic_hits + keyword_hits:
+        key = (
+            str(doc.get("title", "")),
+            str(doc.get("recorded_at", "")),
+            str(doc.get("state", "")),
+            str(doc.get("type", "")),
+            str(doc.get("text", ""))[:120],
         )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined_hits.append(doc)
+        if len(combined_hits) >= RAG_TOP_K:
+            break
+
+    hits = combined_hits
 
     if hits:
         context = build_context(hits)
