@@ -11,54 +11,123 @@
       </div>
     </header>
 
-    <main class="grid">
-      <section class="primary">
-        <h1>Explainable Flood Intelligence for Malaysia</h1>
-        <p class="lead">
-          Query real-time rainfall and river levels with transparent, explainable responses.
-        </p>
+    <div class="interaction-layout">
+      <div class="main-column">
+        <main class="grid">
+          <section class="primary">
+            <h1>Explainable Flood Intelligence for Malaysia</h1>
+            <p class="lead">
+              Query real-time rainfall and river levels with transparent, explainable responses.
+            </p>
 
-        <div class="chat" #chatContainer>
-          <div class="status loading" *ngIf="loading">Contacting the API...</div>
-          <div class="status error" *ngIf="errorMsg">{{ errorMsg }}</div>
+            <section class="onboarding" *ngIf="messages.length === 0">
+              <h2>How this works</h2>
+              <p>Use the guided builder to shape your question, then ask directly for a fast answer.</p>
+              <div class="onboarding-grid">
+                <div class="onboarding-item">
+                  <h3>What you can ask</h3>
+                  <p>Flood risk by state, rainfall hotspots, river level comparisons, and station drivers.</p>
+                </div>
+                <div class="onboarding-item">
+                  <h3>Data freshness</h3>
+                  <p>Answers use recent monitoring readings. If a state has no fresh data, the assistant tells you.</p>
+                </div>
+                <div class="onboarding-item">
+                  <h3>Best question style</h3>
+                  <p>Include state plus time context such as today, yesterday, or last 24 hours.</p>
+                </div>
+              </div>
+            </section>
 
-          <div class="message assistant" *ngIf="loading">
-            <div class="bubble thinking">Thinking...</div>
-          </div>
+            <section class="guided-builder">
+              <div class="builder-head">
+                <span>Guided builder</span>
+                <button type="button" (click)="buildGuidedQuestion()">Build question</button>
+              </div>
+              <div class="builder-grid">
+                <label>
+                  Metric
+                  <select [(ngModel)]="guidedMetric" name="guidedMetric">
+                    <option *ngFor="let metric of guidedMetrics" [value]="metric">{{ metric }}</option>
+                  </select>
+                </label>
+                <label>
+                  Location
+                  <select [(ngModel)]="guidedState" name="guidedState">
+                    <option *ngFor="let state of guidedStates" [value]="state">{{ state }}</option>
+                  </select>
+                </label>
+                <label>
+                  Time
+                  <select [(ngModel)]="guidedTime" name="guidedTime">
+                    <option *ngFor="let time of guidedTimes" [value]="time">{{ time }}</option>
+                  </select>
+                </label>
+                <label>
+                  Action
+                  <select [(ngModel)]="guidedAction" name="guidedAction">
+                    <option *ngFor="let action of guidedActions" [value]="action">{{ action }}</option>
+                  </select>
+                </label>
+              </div>
+            </section>
 
-          <div class="message" *ngFor="let msg of messages" [class.user]="msg.role === 'user'">
-            <div class="bubble" [class.reveal]="msg.revealing">
-              <div class="content">{{ msg.content }}</div>
-              <div class="meta" *ngIf="msg.role === 'assistant' && msg.meta">
-                <span>Mode: {{ msg.meta.mode }}</span>
-                <span>Confidence: {{ msg.meta.confidence }}</span>
-                <span>Latency: {{ msg.meta.latencyMs }} ms</span>
+            <div class="chat" #chatContainer *ngIf="messages.length > 0 || loading || errorMsg">
+              <div class="status loading" *ngIf="loading">Contacting the API...</div>
+              <div class="status error" *ngIf="errorMsg">{{ errorMsg }}</div>
+
+              <div class="message assistant" *ngIf="loading">
+                <div class="bubble thinking">Thinking...</div>
+              </div>
+
+              <div class="message" *ngFor="let msg of messages" [class.user]="msg.role === 'user'">
+                <div class="bubble" [class.reveal]="msg.revealing">
+                  <div class="content">{{ msg.content }}</div>
+                  <div class="meta" *ngIf="msg.role === 'assistant' && msg.meta">
+                    <span>Mode: {{ msg.meta.mode }}</span>
+                    <span>Confidence: {{ msg.meta.confidence }}</span>
+                    <span>Latency: {{ msg.meta.latencyMs }} ms</span>
+                  </div>
+                </div>
               </div>
             </div>
+          </section>
+        </main>
+
+        <div class="command-bar">
+          <form class="ask-form" (ngSubmit)="submit()">
+            <input
+              id="question"
+              name="question"
+              [(ngModel)]="question"
+              placeholder="Ask a flood question, or pick a guided option to start."
+              type="text"
+            />
+            <button type="submit" [disabled]="!question.trim() || loading">
+              {{ loading ? 'Asking...' : 'Ask HydroIntel' }}
+            </button>
+          </form>
+          <div class="examples">
+            <span>Quick prompts:</span>
+            <button
+              type="button"
+              *ngFor="let prompt of starterPrompts"
+              (click)="setQuestion(prompt.question)">
+              {{ prompt.label }}
+            </button>
           </div>
         </div>
-      </section>
-    </main>
-
-    <div class="command-bar">
-      <form class="ask-form" (ngSubmit)="submit()">
-        <input
-          id="question"
-          name="question"
-          [(ngModel)]="question"
-          placeholder="Ask about rainfall or river levels (e.g. “Water level in Klang now”)"
-          type="text"
-        />
-        <button type="submit" [disabled]="!question.trim() || loading">
-          {{ loading ? 'Asking...' : 'Ask HydroIntel' }}
-        </button>
-      </form>
-      <div class="examples">
-        <span>Try:</span>
-        <button type="button" (click)="setQuestion('Rainfall in Kelantan today')">→ Rainfall in Kelantan today</button>
-        <button type="button" (click)="setQuestion('Current river level in Selangor')">→ Current river level in Selangor</button>
-        <button type="button" (click)="setQuestion('Latest rainfall report for Sabah')">→ Latest rainfall report for Sabah</button>
       </div>
+
+      <aside class="insights insights-side">
+        <h2>Quick snapshot</h2>
+        <div class="insight-grid">
+          <article class="insight-card" *ngFor="let card of quickInsights">
+            <h3>{{ card.title }}</h3>
+            <p>{{ card.loading ? 'Refreshing...' : card.value }}</p>
+          </article>
+        </div>
+      </aside>
     </div>
   </div>
 </div>
