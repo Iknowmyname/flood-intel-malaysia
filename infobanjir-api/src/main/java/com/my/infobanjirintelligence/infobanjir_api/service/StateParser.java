@@ -44,7 +44,7 @@ public final class StateParser {
                     case "perak" -> "PRK";
                     case "perlis" -> "PLS";
                     case "pulau pinang", "penang" -> "PNG";
-                    case "sabah" -> "SBH";
+                    case "sabah" -> "SAB";
                     case "sarawak" -> "SWK";
                     case "selangor" -> "SEL";
                     case "terengganu" -> "TRG";
