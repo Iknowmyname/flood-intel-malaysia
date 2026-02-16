@@ -8,6 +8,27 @@ from .state_codes import STATE_NAME_TO_CODE, format_state, normalize_state_code
 def build_summary_from_hits(hits: list[dict]) -> str:
     if not hits:
         return "No matching sources found in the local knowledge base."
+    if str(hits[0].get("type", "")).lower() == "flood_risk":
+        lines = []
+        for i, doc in enumerate(hits[:3], start=1):
+            state_label = format_state(doc.get("state"))
+            score = doc.get("value")
+            if isinstance(score, (int, float)):
+                risk_label = "High" if score >= 65 else "Moderate" if score >= 35 else "Low"
+                score_label = f"{float(score):.1f}/100"
+            else:
+                risk_label = "Unknown"
+                score_label = "n/a"
+            recorded_at = str(doc.get("recorded_at") or "Unknown time")
+            lines.append(
+                f"{i}) {state_label}: {risk_label} heuristic risk (score {score_label}), "
+                f"based on readings up to {recorded_at}."
+            )
+        return (
+            "Estimated flood risk summary (heuristic, not an official warning):\n"
+            + "\n".join(lines)
+        )
+
     lines = []
     for i, doc in enumerate(hits[:3], start=1):
         reading_type = str(doc.get("type") or "").lower()
