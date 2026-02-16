@@ -1,4 +1,5 @@
 from app.rag_context import build_context, build_summary_from_hits, format_state, infer_state_from_question
+from app.state_codes import to_upstream_state_code
 
 
 def test_format_state_known_code():
@@ -36,3 +37,9 @@ def test_build_summary_from_flood_risk_hits():
     assert "heuristic" in summary.lower()
     assert "Selangor (SEL)" in summary
     assert "68.2/100" in summary
+
+
+def test_to_upstream_state_code_uses_expected_aliases():
+    assert to_upstream_state_code("SBH") == "SAB"
+    assert to_upstream_state_code("KED") == "KDH"
+    assert to_upstream_state_code("Sabah") == "SAB"
