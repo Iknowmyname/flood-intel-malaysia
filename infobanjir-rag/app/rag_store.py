@@ -100,7 +100,13 @@ def ingest_documents(documents: list[dict], replace: bool = False) -> None:
         )
 
     if ids:
-        collection.upsert(ids=ids, documents=texts, metadatas=metas)
+        embeddings = embed_texts(texts)
+        collection.upsert(
+            ids=ids,
+            documents=texts,
+            metadatas=metas,
+            embeddings=embeddings,
+        )
 
     _reset_cache()
 
