@@ -8,10 +8,25 @@ from .state_codes import STATE_NAME_TO_CODE, format_state, normalize_state_code
 def build_summary_from_hits(hits: list[dict]) -> str:
     if not hits:
         return "No matching sources found in the local knowledge base."
-    top_snippet = hits[0].get("text", "").strip()
-    if not top_snippet:
-        return "Based on retrieved sources, here are the most relevant findings."
-    return f"Most relevant reading: {top_snippet}"
+    lines = []
+    for i, doc in enumerate(hits[:3], start=1):
+        reading_type = str(doc.get("type") or "").lower()
+        value = doc.get("value")
+        unit = "mm" if reading_type == "rainfall" else "m" if reading_type == "water_level" else ""
+        title = str(doc.get("title") or "Unknown station")
+        state_label = format_state(doc.get("state"))
+        recorded_at = str(doc.get("recorded_at") or "Unknown time")
+
+        if isinstance(value, (int, float)):
+            value_label = f"{float(value):.2f} {unit}".strip()
+        else:
+            value_label = "n/a"
+
+        lines.append(
+            f"{i}) {title} in {state_label} recorded at {recorded_at}: {value_label}"
+        )
+
+    return "Top relevant readings:\n" + "\n".join(lines)
 
 
 def infer_state_from_question(question: str, docs: list[dict]) -> str | None:
