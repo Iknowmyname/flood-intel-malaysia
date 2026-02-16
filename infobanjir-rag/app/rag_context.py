@@ -17,7 +17,7 @@ def build_summary_from_hits(hits: list[dict]) -> str:
 def infer_state_from_question(question: str, docs: list[dict]) -> str | None:
     q = question.lower()
     for name, code in STATE_NAME_TO_CODE.items():
-        if re.search(rf"\\b{re.escape(name)}\\b", q):
+        if re.search(rf"\b{re.escape(name)}\b", q):
             return code
     codes = {str(doc.get("state", "")).upper() for doc in docs if doc.get("state")}
     for code in codes:
