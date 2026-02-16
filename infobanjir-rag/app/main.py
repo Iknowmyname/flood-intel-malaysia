@@ -25,6 +25,26 @@ app = FastAPI(title="HydroIntel MY RAG", version="0.1.0")
 log = logging.getLogger("infobanjir_rag")
 
 
+def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: int) -> list[dict]:
+    combined_hits: list[dict] = []
+    seen = set()
+    for doc in primary_hits + secondary_hits:
+        key = (
+            str(doc.get("title", "")),
+            str(doc.get("recorded_at", "")),
+            str(doc.get("state", "")),
+            str(doc.get("type", "")),
+            str(doc.get("text", ""))[:120],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined_hits.append(doc)
+        if len(combined_hits) >= top_k:
+            break
+    return combined_hits
+
+
 class RagAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
 
@@ -128,44 +148,52 @@ def rag_ingest(payload: RagIngestRequest) -> RagIngestResponse:
 def rag_ask(payload: RagAskRequest) -> RagAskResponse:
     documents = load_documents()
     question = payload.question or ""
+    question_lower = question.lower()
     state = infer_state_from_question(question, documents)
     date_from, date_to = parse_date_range(question)
-
-    semantic_hits = retrieve_semantic(
-        question,
-        top_k=RAG_TOP_K,
-        state=state,
-        date_from=date_from,
-        date_to=date_to,
-        min_score=RAG_MIN_SCORE,
-    )
-    keyword_hits = retrieve_keyword(
-        question,
-        top_k=RAG_TOP_K,
-        state=state,
-        date_from=date_from,
-        date_to=date_to,
+    is_flood_question = any(
+        token in question_lower for token in ("flood", "risk", "danger", "warning", "alert")
     )
 
-    # Hybrid retrieval keeps semantic ranking, then backfills with keyword-only hits.
-    combined_hits: list[dict] = []
-    seen = set()
-    for doc in semantic_hits + keyword_hits:
-        key = (
-            str(doc.get("title", "")),
-            str(doc.get("recorded_at", "")),
-            str(doc.get("state", "")),
-            str(doc.get("type", "")),
-            str(doc.get("text", ""))[:120],
+    if is_flood_question:
+        semantic_hits = retrieve_semantic(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            doc_type="flood_risk",
+            date_from=date_from,
+            date_to=date_to,
+            min_score=RAG_MIN_SCORE,
         )
-        if key in seen:
-            continue
-        seen.add(key)
-        combined_hits.append(doc)
-        if len(combined_hits) >= RAG_TOP_K:
-            break
+        keyword_hits = retrieve_keyword(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            doc_type="flood_risk",
+            date_from=date_from,
+            date_to=date_to,
+        )
+        hits = _combine_hits(semantic_hits, keyword_hits, RAG_TOP_K)
+    else:
+        hits = []
 
-    hits = combined_hits
+    if not hits:
+        semantic_hits = retrieve_semantic(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            date_from=date_from,
+            date_to=date_to,
+            min_score=RAG_MIN_SCORE,
+        )
+        keyword_hits = retrieve_keyword(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        hits = _combine_hits(semantic_hits, keyword_hits, RAG_TOP_K)
 
     if hits:
         context = build_context(hits)

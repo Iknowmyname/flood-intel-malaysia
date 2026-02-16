@@ -133,6 +133,7 @@ def retrieve_semantic(
     question: str,
     top_k: int,
     state: str | None = None,
+    doc_type: str | None = None,
     recorded_date: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -142,6 +143,8 @@ def retrieve_semantic(
     where = {}
     if state:
         where["state"] = {"$in": get_state_synonyms(state)}
+    if doc_type:
+        where["type"] = doc_type
     if recorded_date:
         where["recorded_date"] = recorded_date
     candidate_k = top_k * 5 if (date_from or date_to) else top_k
@@ -183,6 +186,7 @@ def retrieve_keyword(
     question: str,
     top_k: int,
     state: str | None = None,
+    doc_type: str | None = None,
     recorded_date: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -192,6 +196,8 @@ def retrieve_keyword(
     scored = []
     for doc in documents:
         if state and str(doc.get("state", "")).upper() not in get_state_synonyms(state):
+            continue
+        if doc_type and str(doc.get("type", "")).lower() != doc_type.lower():
             continue
         if recorded_date and str(doc.get("recorded_date", "")) != recorded_date:
             continue
