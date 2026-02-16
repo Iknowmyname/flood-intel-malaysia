@@ -1,7 +1,7 @@
 import httpx
 
 from .config import EXPRESS_BASE_URL, EXPRESS_DEFAULT_LIMIT
-from .state_codes import CANONICAL_STATE_CODES, normalize_state_code
+from .state_codes import CANONICAL_STATE_CODES, normalize_state_code, to_upstream_state_code
 
 
 def fetch_express(path: str, params: dict) -> list[dict]:
@@ -168,7 +168,8 @@ def ingest_from_express(state: str | None = None, limit: int | None = None) -> l
     limit = limit if limit is not None else EXPRESS_DEFAULT_LIMIT
 
     if state:
-        params = {"state": state, "limit": limit}
+        upstream_state = to_upstream_state_code(state)
+        params = {"state": upstream_state, "limit": limit}
         rain_items = fetch_express("/api/readings/latest/rain", params)
         water_items = fetch_express("/api/readings/latest/water_level", params)
         risk_docs = build_docs_from_flood_risk(rain_items, water_items)
@@ -179,7 +180,8 @@ def ingest_from_express(state: str | None = None, limit: int | None = None) -> l
     all_rain_items = []
     all_water_items = []
     for code in CANONICAL_STATE_CODES:
-        params = {"state": code, "limit": limit}
+        upstream_state = to_upstream_state_code(code)
+        params = {"state": upstream_state, "limit": limit}
         rain_items = fetch_express("/api/readings/latest/rain", params)
         water_items = fetch_express("/api/readings/latest/water_level", params)
         all_rain_items.extend(rain_items)
