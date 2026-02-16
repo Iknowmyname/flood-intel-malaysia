@@ -37,6 +37,15 @@ STATE_CODE_SYNONYMS = {
     "LBN": ["LBN", "WLP"],
 }
 
+CANONICAL_TO_UPSTREAM = {
+    "KED": "KDH",
+    "KTN": "KEL",
+    "SWK": "SRK",
+    "SBH": "SAB",
+    "KUL": "WLH",
+    "LBN": "WLP",
+}
+
 CODE_TO_STATE = {
     "SEL": "Selangor",
     "KED": "Kedah",
@@ -64,6 +73,19 @@ def normalize_state_code(raw: str | None) -> str | None:
         return None
     code = str(raw).upper()
     return STATE_CODE_ALIASES.get(code, code)
+
+
+def to_upstream_state_code(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    lower = str(raw).strip().lower()
+    if lower in STATE_NAME_TO_CODE:
+        canonical = STATE_NAME_TO_CODE[lower]
+    else:
+        canonical = normalize_state_code(raw)
+    if not canonical:
+        return None
+    return CANONICAL_TO_UPSTREAM.get(canonical, canonical)
 
 
 def get_state_synonyms(code: str | None) -> list[str]:
