@@ -53,7 +53,7 @@ class AskServiceTest {
 
         AskResponse response = askService.handleQuestion("rain in selangor");
 
-        assertThat(response.answer()).contains("Top rainfall readings");
+        assertThat(response.answer()).contains("highest rainfall readings");
         assertThat(response.answer()).contains("Station Alpha");
         assertThat(response.mode()).isEqualTo("sql");
     }
@@ -93,7 +93,7 @@ class AskServiceTest {
 
         AskResponse response = askService.handleQuestion("water level johor");
 
-        assertThat(response.answer()).contains("Top water level readings");
+        assertThat(response.answer()).contains("highest river levels");
         assertThat(response.answer()).contains("Station Beta");
         assertThat(response.mode()).isEqualTo("sql");
     }
@@ -169,12 +169,45 @@ class AskServiceTest {
             "req-2",
             "2026-02-05T10:30:00.000Z"
         );
-        when(ragClient.ask("what is flood risk")).thenReturn(ragResponse);
+        when(ragClient.ask("what is hydrology")).thenReturn(ragResponse);
         ReflectionTestUtils.setField(askService, "mode", "auto");
 
-        AskResponse response = askService.handleQuestion("what is flood risk");
+        AskResponse response = askService.handleQuestion("what is hydrology");
 
         assertThat(response.answer()).contains("RAG general answer");
+        assertThat(response.mode()).isEqualTo("auto");
+    }
+
+    @Test
+    void handleQuestion_auto_floodRisk_usesDeterministicEstimator() {
+        var rain = new RainfallReading(
+            "STN123",
+            "Station Alpha",
+            "Kota",
+            "SEL",
+            "2026-02-05T10:30:00.000Z",
+            12.4,
+            "DID"
+        );
+        var water = new WaterLevelReading(
+            "STN456",
+            "Station Beta",
+            "Kuala",
+            "SEL",
+            "2026-02-05T10:30:00.000Z",
+            15.0,
+            "DID"
+        );
+        when(expressApiClient.getLatestRainfall("SEL", 50))
+            .thenReturn(new RainfallResponse(List.of(rain)));
+        when(expressApiClient.getLatestWaterLevel("SEL", 50))
+            .thenReturn(new WaterLevelResponse(List.of(water)));
+        ReflectionTestUtils.setField(askService, "mode", "auto");
+
+        AskResponse response = askService.handleQuestion("What is the flood risk in Selangor today?");
+
+        assertThat(response.answer()).contains("Estimated flood risk in SEL");
+        assertThat(response.answer()).contains("heuristic estimate");
         assertThat(response.mode()).isEqualTo("auto");
     }
 }

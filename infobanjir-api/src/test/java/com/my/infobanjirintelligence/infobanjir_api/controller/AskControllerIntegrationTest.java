@@ -65,6 +65,6 @@ class AskControllerIntegrationTest {
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).contains("\"status\":\"SUCCESS\"");
-        assertThat(response.getBody()).contains("Top rainfall readings");
+        assertThat(response.getBody()).contains("highest rainfall readings");
     }
 }
