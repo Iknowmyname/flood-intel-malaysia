@@ -2,7 +2,9 @@ package com.my.infobanjirintelligence.infobanjir_api.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,8 +94,13 @@ public class AskService {
 
         String q = question == null ? "" : question.toLowerCase();
         String state = StateParser.findState(question);
+        boolean wantsFloodRisk = isFloodRiskQuestion(q);
         boolean wantsRain = q.contains("rain");
         boolean wantsWaterLevel = q.contains("water level") || q.contains("river level");
+
+        if (wantsFloodRisk) {
+            return estimateFloodRisk(state);
+        }
 
         if (wantsRain) {
             var rainfall = expressApiClient.getLatestRainfall(state, 50).items();
@@ -112,10 +119,10 @@ public class AskService {
                 .toList();
             String scope = state == null ? "Malaysia" : state;
             String summary = top.stream()
-                .map(r -> r.station_name() + " (" + r.state() + ") " + r.rain_mm() + " mm")
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("No stations");
-            return "Top rainfall readings in " + scope + " (" + rainfall.size() + " stations): " + summary + ".";
+                .map(r -> r.station_name() + " (" + r.state() + ") at " + formatDecimal(r.rain_mm()) + " mm")
+                .collect(Collectors.joining(", "));
+            return "In " + scope + ", based on " + rainfall.size() + " recent stations, "
+                + "the highest rainfall readings are " + summary + ".";
         }
 
         if (wantsWaterLevel) {
@@ -134,10 +141,10 @@ public class AskService {
                 .toList();
             String scope = state == null ? "Malaysia" : state;
             String summary = top.stream()
-                .map(w -> w.station_name() + " (" + w.state() + ") " + w.river_level_m() + " m")
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("No stations");
-            return "Top water level readings in " + scope + " (" + water.size() + " stations): " + summary + ".";
+                .map(w -> w.station_name() + " (" + w.state() + ") at " + formatDecimal(w.river_level_m()) + " m")
+                .collect(Collectors.joining(", "));
+            return "In " + scope + ", based on " + water.size() + " recent stations, "
+                + "the highest river levels are " + summary + ".";
         }
 
         return "I can answer about rainfall or water level readings. Please ask about those.";
@@ -145,11 +152,12 @@ public class AskService {
 
     private String callAuto(String question) {
         String q = question == null ? "" : question.toLowerCase();
+        boolean asksFloodRisk = isFloodRiskQuestion(q);
         boolean asksForNumbers = q.contains("average") || q.contains("latest") || q.contains("current");
         boolean asksForRain = q.contains("rain");
         boolean asksForWater = q.contains("water level") || q.contains("river level");
 
-        if (asksForNumbers || asksForRain || asksForWater) {
+        if (asksFloodRisk || asksForNumbers || asksForRain || asksForWater) {
             return callSqlOnly(question);
         }
 
@@ -158,5 +166,71 @@ public class AskService {
         } catch (Exception e) {
             return callSqlOnly(question);
         }
+    }
+
+    private String formatDecimal(Double value) {
+        if (value == null) {
+            return "n/a";
+        }
+        return String.format(Locale.US, "%.2f", value);
+    }
+
+    private boolean isFloodRiskQuestion(String q) {
+        return q.contains("flood")
+            || q.contains("risk")
+            || q.contains("danger")
+            || q.contains("warning")
+            || q.contains("alert");
+    }
+
+    private String estimateFloodRisk(String state) {
+        var rainfall = expressApiClient.getLatestRainfall(state, 50).items();
+        var water = expressApiClient.getLatestWaterLevel(state, 50).items();
+
+        var topRain = rainfall.stream()
+            .filter(r -> r.rain_mm() != null)
+            .sorted((a, b) -> Double.compare(b.rain_mm(), a.rain_mm()))
+            .findFirst();
+        var topWater = water.stream()
+            .filter(w -> w.river_level_m() != null)
+            .sorted((a, b) -> Double.compare(b.river_level_m(), a.river_level_m()))
+            .findFirst();
+
+        if (topRain.isEmpty() && topWater.isEmpty()) {
+            return state == null
+                ? "No recent rainfall or water level readings are available to estimate flood risk."
+                : "No recent rainfall or water level readings are available for " + state + " to estimate flood risk.";
+        }
+
+        double rainMax = topRain.map(r -> r.rain_mm()).orElse(0.0);
+        double waterMax = topWater.map(w -> w.river_level_m()).orElse(0.0);
+        double rainScore = clampPercent((rainMax / 60.0) * 100.0);
+        double waterScore = clampPercent((waterMax / 120.0) * 100.0);
+        double riskScore = Math.round(((rainScore + waterScore) / 2.0) * 10.0) / 10.0;
+        String riskLevel = riskScore >= 65.0 ? "High" : riskScore >= 35.0 ? "Moderate" : "Low";
+
+        String scope = state == null ? "Malaysia" : state;
+        String rainDriver = topRain
+            .map(r -> r.station_name() + " (" + r.state() + ") at " + formatDecimal(r.rain_mm()) + " mm")
+            .orElse("no recent rainfall station data");
+        String waterDriver = topWater
+            .map(w -> w.station_name() + " (" + w.state() + ") at " + formatDecimal(w.river_level_m()) + " m")
+            .orElse("no recent river station data");
+
+        return "Estimated flood risk in " + scope + " is " + riskLevel
+            + " (score " + formatDecimal(riskScore) + "/100). "
+            + "Rainfall driver: " + rainDriver + ". "
+            + "River-level driver: " + waterDriver + ". "
+            + "This is a heuristic estimate based on recent readings, not an official warning.";
+    }
+
+    private double clampPercent(double value) {
+        if (value < 0.0) {
+            return 0.0;
+        }
+        if (value > 100.0) {
+            return 100.0;
+        }
+        return value;
     }
 }
