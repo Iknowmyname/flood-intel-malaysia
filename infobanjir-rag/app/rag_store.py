@@ -1,38 +1,113 @@
-import json
-from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-import faiss
-import numpy as np
+from . import config  # ensures telemetry env vars are set before chromadb import
+
+# Chroma telemetry can be noisy or incompatible with local posthog versions.
+# Force-disable capture to avoid runtime noise.
+try:
+    import posthog  # type: ignore
+
+    def _noop(*_args, **_kwargs):
+        return None
+
+    posthog.capture = _noop
+    posthog.flush = _noop
+except Exception:
+    pass
+
+import chromadb
+from chromadb.config import Settings
+from chromadb.api.models.Collection import Collection
 from sentence_transformers import SentenceTransformer
 
+from .config import CHROMA_COLLECTION, CHROMA_PERSIST_DIR
+from .state_codes import get_state_synonyms
 
-DOCS_PATH = Path(__file__).resolve().parent.parent / "data" / "documents.json"
 
 _DOCUMENTS_CACHE: list[dict] | None = None
 _EMBED_MODEL: SentenceTransformer | None = None
-_INDEX: faiss.Index | None = None
-_INDEX_DOCS: list[dict] = []
+_CHROMA_CLIENT: Optional[chromadb.api.ClientAPI] = None
+_CHROMA_COLLECTION: Optional[Collection] = None
+
+
+def _get_collection() -> Collection:
+    global _CHROMA_CLIENT, _CHROMA_COLLECTION
+    if _CHROMA_CLIENT is None:
+        _CHROMA_CLIENT = chromadb.PersistentClient(
+            path=CHROMA_PERSIST_DIR,
+            settings=Settings(anonymized_telemetry=False),
+        )
+    if _CHROMA_COLLECTION is None:
+        _CHROMA_COLLECTION = _CHROMA_CLIENT.get_or_create_collection(
+            name=CHROMA_COLLECTION
+        )
+    return _CHROMA_COLLECTION
 
 
 def load_documents() -> list[dict]:
     global _DOCUMENTS_CACHE
     if _DOCUMENTS_CACHE is not None:
         return _DOCUMENTS_CACHE
-    if not DOCS_PATH.exists():
-        _DOCUMENTS_CACHE = []
-        return _DOCUMENTS_CACHE
-    with DOCS_PATH.open("r", encoding="utf-8") as handle:
-        _DOCUMENTS_CACHE = json.load(handle)
+    collection = _get_collection()
+    payload = collection.get(include=["documents", "metadatas"])
+    docs = []
+    for text, meta, doc_id in zip(
+        payload.get("documents", []),
+        payload.get("metadatas", []),
+        payload.get("ids", []),
+    ):
+        doc = dict(meta or {})
+        doc["id"] = doc_id
+        doc["text"] = text
+        state = doc.get("state")
+        if state:
+            doc["state"] = str(state).upper()
+        docs.append(doc)
+    _DOCUMENTS_CACHE = docs
     return _DOCUMENTS_CACHE
 
 
 def ingest_documents(documents: list[dict], replace: bool = False) -> None:
-    existing = load_documents()
+    collection = _get_collection()
     if replace:
-        existing.clear()
-    existing.extend(documents)
-    build_index(existing)
+        existing = collection.get(include=["documents"])
+        ids = existing.get("ids", [])
+        if ids:
+            collection.delete(ids=ids)
+        _reset_cache()
+
+    ids = []
+    texts = []
+    metas = []
+    for doc in documents:
+        doc_id = str(doc.get("id"))
+        if not doc_id:
+            continue
+        ids.append(doc_id)
+        texts.append(doc.get("text", ""))
+        recorded_at = doc.get("recorded_at") or ""
+        recorded_date = recorded_at[:10] if isinstance(recorded_at, str) else ""
+        metas.append(
+            {
+                "title": doc.get("title"),
+                "source": doc.get("source"),
+                "type": doc.get("type"),
+                "state": doc.get("state"),
+                "recorded_at": recorded_at,
+                "recorded_date": recorded_date,
+                "value": doc.get("value"),
+            }
+        )
+
+    if ids:
+        collection.upsert(ids=ids, documents=texts, metadatas=metas)
+
+    _reset_cache()
+
+
+def _reset_cache() -> None:
+    global _DOCUMENTS_CACHE
+    _DOCUMENTS_CACHE = None
 
 
 def get_embedder() -> SentenceTransformer:
@@ -42,73 +117,52 @@ def get_embedder() -> SentenceTransformer:
     return _EMBED_MODEL
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
+def embed_texts(texts: list[str]) -> list[list[float]]:
     model = get_embedder()
     vectors = model.encode(texts, normalize_embeddings=True)
-    return np.array(vectors, dtype="float32")
+    return vectors.tolist()
 
 
-def build_index_from_docs(documents: list[dict]) -> tuple[faiss.Index | None, list[dict]]:
-    if not documents:
-        return None, []
-    texts = []
-    docs = []
-    for doc in documents:
-        title = doc.get("title") or ""
-        body = doc.get("text") or ""
-        combined = (title + "\n" + body).strip()
-        if not combined:
-            continue
-        texts.append(combined)
-        docs.append(doc)
-    if not texts:
-        return None, []
-    vectors = embed_texts(texts)
-    dim = vectors.shape[1]
-    index = faiss.IndexFlatIP(dim)
-    index.add(vectors)
-    return index, docs
-
-
-def build_index(documents: list[dict]) -> None:
-    global _INDEX, _INDEX_DOCS
-    index, docs = build_index_from_docs(documents)
-    _INDEX = index
-    _INDEX_DOCS = docs
-
-
-def ensure_index() -> None:
-    if _INDEX is None:
-        build_index(load_documents())
-
-
-def retrieve_semantic_from_docs(question: str, documents: list[dict], top_k: int, min_score: float | None = None) -> list[dict]:
-    index, docs = build_index_from_docs(documents)
-    if index is None or not docs:
-        return []
+def retrieve_semantic(
+    question: str,
+    top_k: int,
+    state: str | None = None,
+    recorded_date: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    min_score: float | None = None,
+) -> list[dict]:
+    collection = _get_collection()
+    where = {}
+    if state:
+        where["state"] = {"$in": get_state_synonyms(state)}
+    if recorded_date:
+        where["recorded_date"] = recorded_date
     qvec = embed_texts([question])
-    k = min(top_k, len(docs))
-    scores, idxs = index.search(qvec, k)
+    result = collection.query(
+        query_embeddings=qvec,
+        n_results=top_k,
+        where=where if where else None,
+        include=["documents", "metadatas", "distances"],
+    )
     hits = []
-    for score, idx in zip(scores[0], idxs[0]):
-        if idx == -1:
-            continue
+    distances = (result.get("distances") or [[]])[0]
+    metas = (result.get("metadatas") or [[]])[0]
+    texts = (result.get("documents") or [[]])[0]
+    for distance, meta, text in zip(distances, metas, texts):
+        score = 1.0 - float(distance)
         if min_score is not None and score < min_score:
             continue
-        hits.append(docs[idx])
+        doc = dict(meta or {})
+        doc["text"] = text
+        if date_from or date_to:
+            doc_date = str(doc.get("recorded_date") or "")
+            if date_from and doc_date < date_from:
+                continue
+            if date_to and doc_date > date_to:
+                continue
+        hits.append(doc)
     return hits
-
-
-def retrieve_semantic(question: str, top_k: int, state: str | None = None) -> list[dict]:
-    if state:
-        documents = load_documents()
-        filtered = [doc for doc in documents if str(doc.get("state", "")).upper() == state]
-        return retrieve_semantic_from_docs(question, filtered, top_k)
-
-    ensure_index()
-    if _INDEX is None or not _INDEX_DOCS:
-        return []
-    return retrieve_semantic_from_docs(question, _INDEX_DOCS, top_k)
 
 
 def score_match(text: str, tokens: list[str]) -> int:
@@ -116,13 +170,40 @@ def score_match(text: str, tokens: list[str]) -> int:
     return sum(1 for token in tokens if token and token in lowered)
 
 
-def retrieve_keyword(question: str, top_k: int) -> list[dict]:
+def retrieve_keyword(
+    question: str,
+    top_k: int,
+    state: str | None = None,
+    recorded_date: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
     tokens = [t.strip() for t in question.lower().split() if t.strip()]
     documents = load_documents()
     scored = []
     for doc in documents:
+        if state and str(doc.get("state", "")).upper() not in get_state_synonyms(state):
+            continue
+        if recorded_date and str(doc.get("recorded_date", "")) != recorded_date:
+            continue
+        doc_date = str(doc.get("recorded_date") or "")
+        if date_from and doc_date < date_from:
+            continue
+        if date_to and doc_date > date_to:
+            continue
         score = score_match(doc.get("text", ""), tokens)
         if score > 0:
             scored.append((score, doc))
     scored.sort(key=lambda item: item[0], reverse=True)
     return [doc for _, doc in scored[:top_k]]
+
+
+def get_stats() -> dict:
+    collection = _get_collection()
+    payload = collection.get(include=["documents"])
+    total = len(payload.get("documents", []))
+    return {
+        "total_documents": total,
+        "collection": CHROMA_COLLECTION,
+        "persist_dir": CHROMA_PERSIST_DIR,
+    }
