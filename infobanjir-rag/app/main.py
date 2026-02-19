@@ -47,6 +47,26 @@ def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: i
     return combined_hits
 
 
+def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: int) -> list[dict]:
+    combined_hits: list[dict] = []
+    seen = set()
+    for doc in primary_hits + secondary_hits:
+        key = (
+            str(doc.get("title", "")),
+            str(doc.get("recorded_at", "")),
+            str(doc.get("state", "")),
+            str(doc.get("type", "")),
+            str(doc.get("text", ""))[:120],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined_hits.append(doc)
+        if len(combined_hits) >= top_k:
+            break
+    return combined_hits
+
+
 class RagAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
 
