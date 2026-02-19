@@ -1,3 +1,6 @@
+import os
+import time
+from contextlib import contextmanager
 from typing import List, Optional
 
 from . import config  # ensures telemetry env vars are set before chromadb import
@@ -28,6 +31,9 @@ _DOCUMENTS_CACHE: list[dict] | None = None
 _EMBED_MODEL: SentenceTransformer | None = None
 _CHROMA_CLIENT: Optional[chromadb.api.ClientAPI] = None
 _CHROMA_COLLECTION: Optional[Collection] = None
+_INGEST_LOCK_FILE = ".ingest.lock"
+_INGEST_LOCK_MAX_AGE_SECONDS = 600
+_INGEST_LOCK_POLL_SECONDS = 0.2
 
 
 def _build_where_clause(
@@ -64,6 +70,62 @@ def _get_collection() -> Collection:
     return _CHROMA_COLLECTION
 
 
+def _reset_collection() -> Collection:
+    """
+    Recreate collection in one step instead of per-id delete to avoid noisy
+    delete races in Chroma's internal consumer.
+    """
+    global _CHROMA_COLLECTION
+    client = _CHROMA_CLIENT
+    if client is None:
+        raise RuntimeError("Chroma client is not initialized")
+    try:
+        client.delete_collection(name=CHROMA_COLLECTION)
+    except Exception:
+        # Collection may not exist yet; safe to ignore.
+        pass
+    _CHROMA_COLLECTION = client.get_or_create_collection(name=CHROMA_COLLECTION)
+    return _CHROMA_COLLECTION
+
+
+@contextmanager
+def _ingest_lock(timeout_seconds: float = 30.0):
+    """
+    Cross-process lock for Chroma write operations.
+    This avoids concurrent replace/delete cycles from overlapping worker threads/processes.
+    """
+    os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
+    lock_path = os.path.join(CHROMA_PERSIST_DIR, _INGEST_LOCK_FILE)
+    deadline = time.monotonic() + timeout_seconds
+    lock_fd = None
+    while lock_fd is None:
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, f"{os.getpid()}:{time.time()}".encode("utf-8"))
+            os.close(lock_fd)
+            lock_fd = 1
+            break
+        except FileExistsError:
+            try:
+                age = time.time() - os.path.getmtime(lock_path)
+                if age > _INGEST_LOCK_MAX_AGE_SECONDS:
+                    os.remove(lock_path)
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for Chroma ingest lock")
+            time.sleep(_INGEST_LOCK_POLL_SECONDS)
+
+    try:
+        yield
+    finally:
+        try:
+            os.remove(lock_path)
+        except FileNotFoundError:
+            pass
+
+
 def load_documents() -> list[dict]:
     global _DOCUMENTS_CACHE
     if _DOCUMENTS_CACHE is not None:
@@ -88,47 +150,45 @@ def load_documents() -> list[dict]:
 
 
 def ingest_documents(documents: list[dict], replace: bool = False) -> None:
-    collection = _get_collection()
-    if replace:
-        existing = collection.get(include=["documents"])
-        ids = existing.get("ids", [])
+    with _ingest_lock(timeout_seconds=60.0):
+        collection = _get_collection()
+        if replace:
+            collection = _reset_collection()
+            _reset_cache()
+
+        ids = []
+        texts = []
+        metas = []
+        for doc in documents:
+            doc_id = str(doc.get("id"))
+            if not doc_id:
+                continue
+            ids.append(doc_id)
+            texts.append(doc.get("text", ""))
+            recorded_at = doc.get("recorded_at") or ""
+            recorded_date = recorded_at[:10] if isinstance(recorded_at, str) else ""
+            metas.append(
+                {
+                    "title": doc.get("title"),
+                    "source": doc.get("source"),
+                    "type": doc.get("type"),
+                    "state": doc.get("state"),
+                    "recorded_at": recorded_at,
+                    "recorded_date": recorded_date,
+                    "value": doc.get("value"),
+                }
+            )
+
         if ids:
-            collection.delete(ids=ids)
+            embeddings = embed_texts(texts)
+            collection.upsert(
+                ids=ids,
+                documents=texts,
+                metadatas=metas,
+                embeddings=embeddings,
+            )
+
         _reset_cache()
-
-    ids = []
-    texts = []
-    metas = []
-    for doc in documents:
-        doc_id = str(doc.get("id"))
-        if not doc_id:
-            continue
-        ids.append(doc_id)
-        texts.append(doc.get("text", ""))
-        recorded_at = doc.get("recorded_at") or ""
-        recorded_date = recorded_at[:10] if isinstance(recorded_at, str) else ""
-        metas.append(
-            {
-                "title": doc.get("title"),
-                "source": doc.get("source"),
-                "type": doc.get("type"),
-                "state": doc.get("state"),
-                "recorded_at": recorded_at,
-                "recorded_date": recorded_date,
-                "value": doc.get("value"),
-            }
-        )
-
-    if ids:
-        embeddings = embed_texts(texts)
-        collection.upsert(
-            ids=ids,
-            documents=texts,
-            metadatas=metas,
-            embeddings=embeddings,
-        )
-
-    _reset_cache()
 
 
 def _reset_cache() -> None:

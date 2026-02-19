@@ -1,0 +1,46 @@
+services:
+  api:
+    build:
+      context: ./infobanjir-api
+    container_name: infobanjir-api
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8081
+      APP_MODE: ${APP_MODE:-auto}
+      SERVICES_RAG_BASE_URL: ${SERVICES_RAG_BASE_URL:-http://rag:8000}
+      SERVICES_EXPRESS_BASE_URL: ${SERVICES_EXPRESS_BASE_URL:-https://flood-monitoring-system.onrender.com}
+
+  rag:
+    build:
+      context: ./infobanjir-rag
+    container_name: infobanjir-rag
+    restart: unless-stopped
+    environment:
+      EXPRESS_BASE_URL: ${EXPRESS_BASE_URL:-https://flood-monitoring-system.onrender.com}
+      CHROMA_PERSIST_DIR: /data/chroma
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-readings}
+      AUTO_INGEST_ON_STARTUP: ${AUTO_INGEST_ON_STARTUP:-true}
+      AUTO_INGEST_REFRESH_SECONDS: ${AUTO_INGEST_REFRESH_SECONDS:-600}
+      EXPRESS_DEFAULT_LIMIT: ${EXPRESS_DEFAULT_LIMIT:-1000}
+      RAG_TOP_K: ${RAG_TOP_K:-4}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.1}
+      RAG_USE_LLM: ${RAG_USE_LLM:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-120}
+      OLLAMA_RETRIES: ${OLLAMA_RETRIES:-2}
+    volumes:
+      - ${CHROMA_HOST_PATH:-./.data/chroma}:/data/chroma
+
+  frontend:
+    build:
+      context: ./infobanjir-frontend
+    container_name: infobanjir-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-/api/ask}
+    depends_on:
+      - api
+      - rag

@@ -14,7 +14,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
 OLLAMA_RETRIES = int(os.getenv("OLLAMA_RETRIES", "2"))
 
-RAG_USE_LLM = True
+RAG_USE_LLM = os.getenv("RAG_USE_LLM", "true").lower() in ("1", "true", "yes")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
 RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.1"))
 
