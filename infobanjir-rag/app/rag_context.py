@@ -1,4 +1,8 @@
-from typing import List
+import re
+from datetime import datetime, timezone
+from typing import List, Optional, Tuple
+
+from .state_codes import STATE_NAME_TO_CODE, format_state, normalize_state_code
 
 
 def build_summary_from_hits(hits: list[dict]) -> str:
@@ -12,63 +16,14 @@ def build_summary_from_hits(hits: list[dict]) -> str:
 
 def infer_state_from_question(question: str, docs: list[dict]) -> str | None:
     q = question.lower()
-    name_to_code = {
-        "selangor": "SEL",
-        "kedah": "KED",
-        "penang": "PNG",
-        "pulau pinang": "PNG",
-        "kelantan": "KTN",
-        "johor": "JHR",
-        "perak": "PRK",
-        "pahang": "PHG",
-        "terengganu": "TRG",
-        "negeri sembilan": "NSN",
-        "melaka": "MLK",
-        "perlis": "PLS",
-        "sabah": "SBH",
-        "sarawak": "SWK",
-        "kuala lumpur": "KUL",
-        "putrajaya": "PTJ",
-        "labuan": "LBN",
-    }
-    for name, code in name_to_code.items():
-        if name in q:
+    for name, code in STATE_NAME_TO_CODE.items():
+        if re.search(rf"\\b{re.escape(name)}\\b", q):
             return code
     codes = {str(doc.get("state", "")).upper() for doc in docs if doc.get("state")}
     for code in codes:
         if code.lower() in q:
-            return code
+            return normalize_state_code(code)
     return None
-
-
-_CODE_TO_STATE = {
-    "SEL": "Selangor",
-    "KED": "Kedah",
-    "PNG": "Penang",
-    "KTN": "Kelantan",
-    "JHR": "Johor",
-    "PRK": "Perak",
-    "PHG": "Pahang",
-    "TRG": "Terengganu",
-    "NSN": "Negeri Sembilan",
-    "MLK": "Melaka",
-    "PLS": "Perlis",
-    "SBH": "Sabah",
-    "SWK": "Sarawak",
-    "KUL": "Kuala Lumpur",
-    "PTJ": "Putrajaya",
-    "LBN": "Labuan",
-}
-
-
-def format_state(state: str | None) -> str:
-    if not state:
-        return "Unknown"
-    code = str(state).upper()
-    name = _CODE_TO_STATE.get(code)
-    if name:
-        return f"{name} ({code})"
-    return code
 
 
 def build_context(hits: list[dict]) -> str:
@@ -82,3 +37,25 @@ def build_context(hits: list[dict]) -> str:
             snippet = snippet[:300] + "..."
         lines.append(f"[{i}] {title} ({source}) | State: {state_label}: {snippet}")
     return "\n".join(lines)
+
+
+def parse_date_range(question: str) -> tuple[str | None, str | None]:
+    q = question.lower()
+    if "today" in q:
+        today = datetime.now(timezone.utc).date().isoformat()
+        return today, today
+
+    between = re.search(r"between\s+(\d{4}-\d{2}-\d{2})\s+and\s+(\d{4}-\d{2}-\d{2})", q)
+    if between:
+        return between.group(1), between.group(2)
+
+    from_to = re.search(r"from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})", q)
+    if from_to:
+        return from_to.group(1), from_to.group(2)
+
+    single = re.search(r"(\d{4}-\d{2}-\d{2})", q)
+    if single:
+        date = single.group(1)
+        return date, date
+
+    return None, None
