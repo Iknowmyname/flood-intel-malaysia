@@ -2,6 +2,7 @@ import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { NgFor, NgIf } from '@angular/common';
+import { runtimeConfig } from './runtime-config';
 
 @Component({
   selector: 'app-root',
@@ -58,7 +59,7 @@ export class AppComponent implements OnInit {
     }
   ];
 
-  private readonly apiUrl = 'http://localhost:8081/api/ask';
+  private readonly apiUrl = runtimeConfig.apiUrl;
 
   constructor(private readonly http: HttpClient) {}
 
@@ -189,7 +190,7 @@ export class AppComponent implements OnInit {
         }
       },
       error: () => {
-        this.errorMsg = 'Request failed. Check that the API is running on port 8081.';
+        this.errorMsg = 'Request failed. Check backend availability and API URL config.';
         this.messages = [
           ...this.messages,
           {
