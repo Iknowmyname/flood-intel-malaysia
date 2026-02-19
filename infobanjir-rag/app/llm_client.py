@@ -49,3 +49,4 @@ def check_ollama_health() -> bool:
         return True
     except Exception:
         return False
+

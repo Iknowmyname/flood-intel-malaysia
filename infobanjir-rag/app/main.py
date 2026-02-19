@@ -23,6 +23,8 @@ from .rag_store import get_stats, ingest_documents, load_documents, retrieve_key
 
 app = FastAPI(title="HydroIntel MY RAG", version="0.1.0")
 log = logging.getLogger("infobanjir_rag")
+_INGEST_STOP_EVENT = threading.Event()
+_INGEST_THREAD: threading.Thread | None = None
 
 
 def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: int) -> list[dict]:
@@ -88,6 +90,11 @@ def health() -> dict:
     }
 
 
+@app.get("/rag/health")
+def rag_health() -> dict:
+    return health()
+
+
 @app.get("/health/llm")
 def health_llm() -> dict:
     return {
@@ -95,6 +102,11 @@ def health_llm() -> dict:
         "service": "ollama",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/rag/health/llm")
+def rag_health_llm() -> dict:
+    return health_llm()
 
 
 @app.get("/rag/stats")
@@ -230,7 +242,7 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
 
 
 def _auto_ingest_loop() -> None:
-    while True:
+    while not _INGEST_STOP_EVENT.is_set():
         success = True
         message = "ok"
         ingested = 0
@@ -250,15 +262,26 @@ def _auto_ingest_loop() -> None:
             message=message,
             started_at=started_at,
         )
-        time.sleep(AUTO_INGEST_REFRESH_SECONDS)
+        _INGEST_STOP_EVENT.wait(AUTO_INGEST_REFRESH_SECONDS)
 
 
 @app.on_event("startup")
 def startup_ingest() -> None:
+    global _INGEST_THREAD
     if not AUTO_INGEST_ON_STARTUP:
         return
-    thread = threading.Thread(target=_auto_ingest_loop, daemon=True)
-    thread.start()
+    if _INGEST_THREAD is not None and _INGEST_THREAD.is_alive():
+        return
+    _INGEST_STOP_EVENT.clear()
+    _INGEST_THREAD = threading.Thread(target=_auto_ingest_loop, daemon=False)
+    _INGEST_THREAD.start()
+
+
+@app.on_event("shutdown")
+def shutdown_ingest() -> None:
+    _INGEST_STOP_EVENT.set()
+    if _INGEST_THREAD is not None and _INGEST_THREAD.is_alive():
+        _INGEST_THREAD.join(timeout=2)
 
 
 _INGEST_STATUS = {
