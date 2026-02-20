@@ -1,19 +1,70 @@
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 from typing import List
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from .config import RAG_MIN_SCORE, RAG_TOP_K, RAG_USE_LLM
-from .ingest import build_docs_from_rain, build_docs_from_water, fetch_express
+from .config import (
+    AUTO_INGEST_ON_STARTUP,
+    AUTO_INGEST_REFRESH_SECONDS,
+    EXPRESS_DEFAULT_LIMIT,
+    RAG_MIN_SCORE,
+    RAG_TOP_K,
+    RAG_USE_LLM,
+)
+from .ingest import ingest_from_express
 from .llm_client import call_ollama, check_ollama_health
-from .rag_context import build_context, build_summary_from_hits, infer_state_from_question
-from .rag_store import ingest_documents, load_documents, retrieve_keyword, retrieve_semantic_from_docs
+from .rag_context import build_context, build_summary_from_hits, infer_state_from_question, parse_date_range
+from .rag_store import get_stats, ingest_documents, load_documents, retrieve_keyword, retrieve_semantic
 
 
 app = FastAPI(title="HydroIntel MY RAG", version="0.1.0")
 log = logging.getLogger("infobanjir_rag")
+_INGEST_STOP_EVENT = threading.Event()
+_INGEST_THREAD: threading.Thread | None = None
+
+
+def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: int) -> list[dict]:
+    combined_hits: list[dict] = []
+    seen = set()
+    for doc in primary_hits + secondary_hits:
+        key = (
+            str(doc.get("title", "")),
+            str(doc.get("recorded_at", "")),
+            str(doc.get("state", "")),
+            str(doc.get("type", "")),
+            str(doc.get("text", ""))[:120],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined_hits.append(doc)
+        if len(combined_hits) >= top_k:
+            break
+    return combined_hits
+
+
+def _combine_hits(primary_hits: list[dict], secondary_hits: list[dict], top_k: int) -> list[dict]:
+    combined_hits: list[dict] = []
+    seen = set()
+    for doc in primary_hits + secondary_hits:
+        key = (
+            str(doc.get("title", "")),
+            str(doc.get("recorded_at", "")),
+            str(doc.get("state", "")),
+            str(doc.get("type", "")),
+            str(doc.get("text", ""))[:120],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined_hits.append(doc)
+        if len(combined_hits) >= top_k:
+            break
+    return combined_hits
 
 
 class RagAskRequest(BaseModel):
@@ -59,6 +110,11 @@ def health() -> dict:
     }
 
 
+@app.get("/rag/health")
+def rag_health() -> dict:
+    return health()
+
+
 @app.get("/health/llm")
 def health_llm() -> dict:
     return {
@@ -68,24 +124,47 @@ def health_llm() -> dict:
     }
 
 
+@app.get("/rag/health/llm")
+def rag_health_llm() -> dict:
+    return health_llm()
+
+
+@app.get("/rag/stats")
+def rag_stats() -> dict:
+    stats = get_stats()
+    stats["timestamp"] = datetime.now(timezone.utc).isoformat()
+    return stats
+
+
+@app.get("/rag/stats/by-state")
+def rag_stats_by_state() -> dict:
+    documents = load_documents()
+    counts = {}
+    latest_dates = {}
+    for doc in documents:
+        state = str(doc.get("state", "Unknown")).upper()
+        counts[state] = counts.get(state, 0) + 1
+        recorded_date = str(doc.get("recorded_date") or "")
+        if recorded_date:
+            prev = latest_dates.get(state)
+            if prev is None or recorded_date > prev:
+                latest_dates[state] = recorded_date
+    return {
+        "counts": counts,
+        "latest_dates": latest_dates,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 class RagExpressIngestRequest(BaseModel):
     state: str | None = None
-    limit: int | None = 200
+    limit: int | None = None
     replace: bool = True
 
 
 @app.post("/rag/ingest-from-express", response_model=RagIngestResponse)
 def rag_ingest_from_express(payload: RagExpressIngestRequest) -> RagIngestResponse:
-    params = {}
-    if payload.state:
-        params["state"] = payload.state
-    if payload.limit:
-        params["limit"] = payload.limit
-
-    rain_items = fetch_express("/api/readings/latest/rain", params)
-    water_items = fetch_express("/api/readings/latest/water_level", params)
-
-    docs = build_docs_from_rain(rain_items) + build_docs_from_water(water_items)
+    docs = ingest_from_express(state=payload.state, limit=payload.limit)
     ingest_documents(docs, replace=payload.replace)
     return RagIngestResponse(ingested=len(docs), total=len(load_documents()), source="express")
 
@@ -101,33 +180,52 @@ def rag_ingest(payload: RagIngestRequest) -> RagIngestResponse:
 def rag_ask(payload: RagAskRequest) -> RagAskResponse:
     documents = load_documents()
     question = payload.question or ""
-    q = question.lower()
+    question_lower = question.lower()
     state = infer_state_from_question(question, documents)
+    date_from, date_to = parse_date_range(question)
+    is_flood_question = any(
+        token in question_lower for token in ("flood", "risk", "danger", "warning", "alert")
+    )
 
-    hits: list[dict] = []
-    if "today" in q:
-        if state:
-            documents = [doc for doc in documents if str(doc.get("state", "")).upper() == state]
-        dates = []
-        for doc in documents:
-            recorded_at = doc.get("recorded_at")
-            if isinstance(recorded_at, str) and recorded_at:
-                dates.append(recorded_at[:10])
-        if dates:
-            latest = max(dates)
-            documents = [
-                doc for doc in documents
-                if str(doc.get("recorded_at", ""))[:10] == latest
-            ]
-        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K, min_score=RAG_MIN_SCORE)
-        if not hits:
-            hits = retrieve_keyword(question, top_k=RAG_TOP_K)
+    if is_flood_question:
+        semantic_hits = retrieve_semantic(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            doc_type="flood_risk",
+            date_from=date_from,
+            date_to=date_to,
+            min_score=RAG_MIN_SCORE,
+        )
+        keyword_hits = retrieve_keyword(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            doc_type="flood_risk",
+            date_from=date_from,
+            date_to=date_to,
+        )
+        hits = _combine_hits(semantic_hits, keyword_hits, RAG_TOP_K)
     else:
-        if state:
-            documents = [doc for doc in documents if str(doc.get("state", "")).upper() == state]
-        hits = retrieve_semantic_from_docs(question, documents, RAG_TOP_K, min_score=RAG_MIN_SCORE)
-        if not hits:
-            hits = retrieve_keyword(question, top_k=RAG_TOP_K)
+        hits = []
+
+    if not hits:
+        semantic_hits = retrieve_semantic(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            date_from=date_from,
+            date_to=date_to,
+            min_score=RAG_MIN_SCORE,
+        )
+        keyword_hits = retrieve_keyword(
+            question,
+            top_k=RAG_TOP_K,
+            state=state,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        hits = _combine_hits(semantic_hits, keyword_hits, RAG_TOP_K)
 
     if hits:
         context = build_context(hits)
@@ -161,3 +259,73 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
         request_id="stub",
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def _auto_ingest_loop() -> None:
+    while not _INGEST_STOP_EVENT.is_set():
+        success = True
+        message = "ok"
+        ingested = 0
+        started_at = datetime.now(timezone.utc).isoformat()
+        try:
+            docs = ingest_from_express(state=None, limit=EXPRESS_DEFAULT_LIMIT)
+            ingest_documents(docs, replace=True)
+            ingested = len(docs)
+            log.info("Auto-ingest refreshed %s documents", ingested)
+        except Exception:
+            log.exception("Auto-ingest failed")
+            success = False
+            message = "failed"
+        _set_ingest_status(
+            success=success,
+            ingested=ingested,
+            message=message,
+            started_at=started_at,
+        )
+        _INGEST_STOP_EVENT.wait(AUTO_INGEST_REFRESH_SECONDS)
+
+
+@app.on_event("startup")
+def startup_ingest() -> None:
+    global _INGEST_THREAD
+    if not AUTO_INGEST_ON_STARTUP:
+        return
+    if _INGEST_THREAD is not None and _INGEST_THREAD.is_alive():
+        return
+    _INGEST_STOP_EVENT.clear()
+    _INGEST_THREAD = threading.Thread(target=_auto_ingest_loop, daemon=False)
+    _INGEST_THREAD.start()
+
+
+@app.on_event("shutdown")
+def shutdown_ingest() -> None:
+    _INGEST_STOP_EVENT.set()
+    if _INGEST_THREAD is not None and _INGEST_THREAD.is_alive():
+        _INGEST_THREAD.join(timeout=2)
+
+
+_INGEST_STATUS = {
+    "last_success": None,
+    "last_failure": None,
+    "last_ingested": 0,
+    "last_message": "never_run",
+    "last_started_at": None,
+}
+
+
+def _set_ingest_status(success: bool, ingested: int, message: str, started_at: str) -> None:
+    if success:
+        _INGEST_STATUS["last_success"] = datetime.now(timezone.utc).isoformat()
+    else:
+        _INGEST_STATUS["last_failure"] = datetime.now(timezone.utc).isoformat()
+    _INGEST_STATUS["last_ingested"] = ingested
+    _INGEST_STATUS["last_message"] = message
+    _INGEST_STATUS["last_started_at"] = started_at
+
+
+@app.get("/rag/ingest/status")
+def rag_ingest_status() -> dict:
+    return {
+        **_INGEST_STATUS,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

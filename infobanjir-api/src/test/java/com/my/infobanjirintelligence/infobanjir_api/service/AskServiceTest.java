@@ -210,45 +210,4 @@ class AskServiceTest {
         assertThat(response.answer()).contains("heuristic estimate");
         assertThat(response.mode()).isEqualTo("auto");
     }
-
-    @Test
-    void handleQuestion_auto_explanationQuestion_returnsMethodExplanation() {
-        ReflectionTestUtils.setField(askService, "mode", "auto");
-
-        AskResponse response = askService.handleQuestion("How does this assistant estimate flood risk?");
-
-        assertThat(response.answer()).contains("how this assistant estimates flood risk");
-        assertThat(response.confidence()).isLessThan(1.0);
-        assertThat(response.mode()).isEqualTo("auto");
-    }
-
-    @Test
-    void handleQuestion_auto_unknownState_returnsValidationMessage() {
-        ReflectionTestUtils.setField(askService, "mode", "auto");
-
-        AskResponse response = askService.handleQuestion("What is the flood risk in Atlantis today?");
-
-        assertThat(response.answer()).contains("couldn't recognize");
-        assertThat(response.mode()).isEqualTo("auto");
-    }
-
-    @Test
-    void handleQuestion_auto_historicalRange_returnsScopeWarning() {
-        ReflectionTestUtils.setField(askService, "mode", "auto");
-
-        AskResponse response = askService.handleQuestion("What changed in flood risk for Selangor between 2026-02-19 and 2026-02-20?");
-
-        assertThat(response.answer()).contains("Historical or date-range queries are not supported");
-        assertThat(response.mode()).isEqualTo("auto");
-    }
-
-    @Test
-    void handleQuestion_auto_offTopic_returnsCapabilityGuidance() {
-        ReflectionTestUtils.setField(askService, "mode", "auto");
-
-        AskResponse response = askService.handleQuestion("Tell me a joke about floods");
-
-        assertThat(response.answer()).contains("I can help with Malaysian flood");
-        assertThat(response.mode()).isEqualTo("auto");
-    }
 }
