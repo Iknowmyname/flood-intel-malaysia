@@ -27,7 +27,7 @@
 }
 
 .workspace {
-  width: min(1280px, 100%);
+  width: min(1560px, 100%);
   margin: 0 auto;
   padding: 24px 24px 32px;
   display: grid;
@@ -37,8 +37,8 @@
 
 .interaction-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 40px;
+  grid-template-columns: minmax(220px, 250px) minmax(0, 1fr) minmax(220px, 250px);
+  gap: 20px;
   align-items: start;
 }
 
@@ -116,7 +116,41 @@
   text-align: center;
   font-size: 1rem;
   line-height: 1.6;
-  max-width: 680px;
+  max-width: 860px;
+}
+
+.experimental-note {
+  border: 1px solid rgba(255, 184, 102, 0.35);
+  background: rgba(36, 24, 8, 0.65);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  justify-self: stretch;
+  width: 100%;
+}
+
+.experimental-note h2 {
+  margin: 0;
+  font-size: 0.96rem;
+  color: #ffd596;
+}
+
+.experimental-note p {
+  margin: 0;
+  color: #f2d9b0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.experimental-note ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  color: #f2d9b0;
+  font-size: 0.83rem;
+  line-height: 1.45;
 }
 
 .onboarding {
@@ -172,8 +206,17 @@
   top: 20px;
   justify-self: end;
   width: 100%;
-  max-width: 280px;
+  max-width: 250px;
   margin-left: 8px;
+}
+
+.insights-left {
+  position: sticky;
+  top: 20px;
+  justify-self: start;
+  width: 100%;
+  max-width: 250px;
+  margin-right: 8px;
 }
 
 .insights h2 {
@@ -499,7 +542,21 @@ button[type='submit']:hover:not(:disabled) {
     gap: 18px;
   }
 
+  .main-column {
+    order: 1;
+  }
+
+  .insights-left {
+    order: 2;
+    position: relative;
+    top: auto;
+    max-width: none;
+    justify-self: stretch;
+    margin-right: 0;
+  }
+
   .insights-side {
+    order: 3;
     position: relative;
     top: auto;
     max-width: none;
