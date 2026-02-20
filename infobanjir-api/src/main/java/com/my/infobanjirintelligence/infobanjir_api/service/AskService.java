@@ -98,6 +98,18 @@ public class AskService {
         boolean wantsRain = q.contains("rain");
         boolean wantsWaterLevel = q.contains("water level") || q.contains("river level");
 
+        String unknownLocation = findUnknownLocation(question);
+        if (unknownLocation != null && (wantsFloodRisk || wantsRain || wantsWaterLevel)) {
+            return "I couldn't recognize \"" + unknownLocation
+                + "\" as a Malaysian state. Please ask using a Malaysian state name.";
+        }
+
+        if (hasHistoricalTimeIntent(q) && (wantsFloodRisk || wantsRain || wantsWaterLevel)) {
+            String scope = state == null ? "for Malaysia" : "for " + state;
+            return "Historical or date-range queries are not supported in live SQL mode yet. "
+                + "Please ask for current/latest readings " + scope + ".";
+        }
+
         if (wantsFloodRisk) {
             return estimateFloodRisk(state);
         }
@@ -148,9 +160,10 @@ public class AskService {
     }
 
     private String callAuto(String question) {
-        String q = question == null ? "" : question.toLowerCase();
+        String q = normalize(question);
         boolean asksFloodRisk = isFloodRiskQuestion(q);
-        boolean asksForNumbers = q.contains("average") || q.contains("latest") || q.contains("current");
+        boolean asksForNumbers = q.contains("average") || q.contains("latest") || q.contains("current")
+            || q.contains("top") || q.contains("highest") || q.contains("summary");
         boolean asksForRain = q.contains("rain");
         boolean asksForWater = q.contains("water level") || q.contains("river level");
         boolean asksHydroMetrics = asksFloodRisk || asksForNumbers || asksForRain || asksForWater;
@@ -160,7 +173,11 @@ public class AskService {
                 + "Please ask one of those.";
         }
 
-        if (asksFloodRisk || asksForNumbers || asksForRain || asksForWater) {
+        if (asksForExplanation(q)) {
+            return explainMethodology();
+        }
+
+        if (asksHydroMetrics) {
             return callSqlOnly(question);
         }
 
@@ -178,12 +195,112 @@ public class AskService {
         return String.format(Locale.US, "%.2f", value);
     }
 
+    private String normalize(String question) {
+        return question == null ? "" : question.trim().toLowerCase(Locale.ROOT);
+    }
+
     private boolean isFloodRiskQuestion(String q) {
         return q.contains("flood")
             || q.contains("risk")
             || q.contains("danger")
             || q.contains("warning")
             || q.contains("alert");
+    }
+
+    private boolean hasHistoricalTimeIntent(String q) {
+        return q.contains("yesterday")
+            || q.contains("last 24 hours")
+            || q.contains("between")
+            || q.contains("from ")
+            || q.contains(" on ")
+            || ISO_DATE_PATTERN.matcher(q).find();
+    }
+
+    private boolean asksForExplanation(String q) {
+        return q.contains("how")
+            || q.contains("why")
+            || q.contains("explain")
+            || q.contains("method")
+            || q.contains("methodology")
+            || q.contains("limitation")
+            || q.contains("data source")
+            || q.contains("source");
+    }
+
+    private boolean isOffTopic(String q) {
+        return q.contains("joke")
+            || q.contains("poem")
+            || q.contains("song")
+            || q.contains("story");
+    }
+
+    private String findUnknownLocation(String question) {
+        if (question == null) {
+            return null;
+        }
+        if (StateParser.findState(question) != null) {
+            return null;
+        }
+        String q = normalize(question);
+        Matcher matcher = LOCATION_PATTERN.matcher(q);
+        if (!matcher.find()) {
+            return null;
+        }
+        String candidate = matcher.group(1)
+            .replaceAll("\\b(today|yesterday|tomorrow|latest|current|now)\\b", "")
+            .trim();
+        if (candidate.isBlank()) {
+            return null;
+        }
+        if (candidate.contains("malaysia")) {
+            return null;
+        }
+        if (StateParser.findState(candidate) != null) {
+            return null;
+        }
+        return candidate;
+    }
+
+    private String explainMethodology() {
+        return "Here is how this assistant estimates flood risk: "
+            + "it uses the latest rainfall and river-level station readings from the upstream data service, "
+            + "picks the strongest recent rainfall and river-level drivers, normalizes those signals, and combines "
+            + "them into a heuristic risk score (Low/Moderate/High). "
+            + "This is a guidance estimate from recent observations, not an official warning.";
+    }
+
+    private double inferConfidence(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return 0.0;
+        }
+        String text = answer.toLowerCase(Locale.ROOT);
+        if (text.contains("service is temporarily unavailable")) {
+            return 0.0;
+        }
+        if (text.startsWith("estimated flood risk in ")
+            || text.startsWith("in ")
+            || text.startsWith("top relevant readings:")) {
+            return 0.85;
+        }
+        if (text.startsWith("estimated flood risk summary")) {
+            return 0.7;
+        }
+        if (text.startsWith("here is how this assistant estimates flood risk")) {
+            return 0.75;
+        }
+        if (text.startsWith("historical or date-range queries are not supported")) {
+            return 0.45;
+        }
+        if (text.startsWith("i couldn't recognize")) {
+            return 0.35;
+        }
+        if (text.startsWith("i can help with malaysian flood")) {
+            return 0.35;
+        }
+        if (text.startsWith("no recent") || text.startsWith("no matching")) {
+            return 0.4;
+        }
+        return 0.6;
     }
 
     private String estimateFloodRisk(String state) {
