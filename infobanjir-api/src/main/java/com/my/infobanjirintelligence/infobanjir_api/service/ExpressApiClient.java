@@ -35,9 +35,10 @@ public class ExpressApiClient {
     }
 
     public RainfallResponse getLatestRainfall(String state, Integer limit) {
+        String upstreamState = toUpstreamStateCode(state);
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
             .path("/api/readings/latest/rain")
-            .queryParamIfPresent("state", Optional.ofNullable(state))
+            .queryParamIfPresent("state", Optional.ofNullable(upstreamState))
             .queryParamIfPresent("limit", Optional.ofNullable(limit))
             .toUriString();
 
@@ -45,9 +46,10 @@ public class ExpressApiClient {
     }
 
     public WaterLevelResponse getLatestWaterLevel(String state, Integer limit) {
+        String upstreamState = toUpstreamStateCode(state);
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
             .path("/api/readings/latest/water_level")
-            .queryParamIfPresent("state", Optional.ofNullable(state))
+            .queryParamIfPresent("state", Optional.ofNullable(upstreamState))
             .queryParamIfPresent("limit", Optional.ofNullable(limit))
             .toUriString();
 
@@ -81,5 +83,19 @@ public class ExpressApiClient {
             return type.cast(new WaterLevelResponse(Collections.emptyList()));
         }
         return null;
+    }
+
+    private String toUpstreamStateCode(String state) {
+        if (state == null) {
+            return null;
+        }
+        return switch (state.toUpperCase()) {
+            case "KED" -> "KDH";
+            case "KTN" -> "KEL";
+            case "SWK" -> "SRK";
+            case "KUL" -> "WLH";
+            case "LBN" -> "WLP";
+            default -> state.toUpperCase();
+        };
     }
 }

@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -15,11 +17,12 @@ import org.springframework.stereotype.Service;
 import com.my.infobanjirintelligence.infobanjir_api.model.AskResponse;
 import com.my.infobanjirintelligence.infobanjir_api.model.RagAskResponse;
 
-
 @Service
 public class AskService {
 
     private static final Logger log = LoggerFactory.getLogger(AskService.class);
+    private static final Pattern ISO_DATE_PATTERN = Pattern.compile("\\b\\d{4}-\\d{2}-\\d{2}\\b");
+    private static final Pattern LOCATION_PATTERN = Pattern.compile("\\b(?:in|for|at)\\s+([a-z][a-z\\s]{2,30})\\b");
 
     private final ExpressApiClient expressApiClient;
     private final RagClient ragClient;
@@ -35,7 +38,7 @@ public class AskService {
     public AskResponse handleQuestion(String question) {
         log.warn("AskService loaded from: {}", AskService.class.getProtectionDomain().getCodeSource().getLocation());
 
-        if (question == null){
+        if (question == null) {
             throw new IllegalArgumentException("Question is not valid !");
         }
 
@@ -47,13 +50,11 @@ public class AskService {
 
         Instant start = Instant.now();
         String answer;
-        double confidence = 1.0;
+        double confidence;
 
         try {
-            
             switch (mode.toLowerCase()) {
                 case "rag" -> {
-                    // RAG mode which falls back to SQL mode in case of failure.
                     try {
                         answer = callRagService(question);
                     } catch (Exception e) {
@@ -63,13 +64,13 @@ public class AskService {
                 case "sql" -> answer = callSqlOnly(question);
                 default -> answer = callAuto(question);
             }
+            confidence = inferConfidence(answer);
         } catch (Exception e) {
             answer = "Service is temporarily unavailable";
             confidence = 0.0;
         }
 
         long latencyMs = Duration.between(start, Instant.now()).toMillis();
-
 
         return new AskResponse(
             answer,
@@ -89,10 +90,9 @@ public class AskService {
         return response.answer();
     }
 
-
     private String callSqlOnly(String question) {
 
-        String q = question == null ? "" : question.toLowerCase();
+        String q = normalize(question);
         String state = StateParser.findState(question);
         boolean wantsFloodRisk = isFloodRiskQuestion(q);
         boolean wantsRain = q.contains("rain");
@@ -105,9 +105,7 @@ public class AskService {
         if (wantsRain) {
             var rainfall = expressApiClient.getLatestRainfall(state, 50).items();
             log.warn("SQL_ONLY rainfall: state={} items={}", state, rainfall.size());
-            System.out.println("SQL_ONLY rainfall: state=" + state + " items=" + rainfall.size());
             if (rainfall.isEmpty()) {
-                System.out.println("test");
                 return state == null
                     ? "No recent rainfall readings are available."
                     : "No recent rainfall readings are available for " + state + ".";
@@ -128,7 +126,6 @@ public class AskService {
         if (wantsWaterLevel) {
             var water = expressApiClient.getLatestWaterLevel(state, 50).items();
             log.warn("SQL_ONLY water level: state={} items={}", state, water.size());
-            System.out.println("SQL_ONLY water level: state=" + state + " items=" + water.size());
             if (water.isEmpty()) {
                 return state == null
                     ? "No recent water level readings are available."
@@ -156,6 +153,12 @@ public class AskService {
         boolean asksForNumbers = q.contains("average") || q.contains("latest") || q.contains("current");
         boolean asksForRain = q.contains("rain");
         boolean asksForWater = q.contains("water level") || q.contains("river level");
+        boolean asksHydroMetrics = asksFloodRisk || asksForNumbers || asksForRain || asksForWater;
+
+        if (isOffTopic(q)) {
+            return "I can help with Malaysian flood, rainfall, and river-level questions. "
+                + "Please ask one of those.";
+        }
 
         if (asksFloodRisk || asksForNumbers || asksForRain || asksForWater) {
             return callSqlOnly(question);
