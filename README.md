@@ -10,15 +10,6 @@ It is built as a multi-service architecture:
 - `infobanjir-api` (Java 17 + Spring Boot orchestration API)
 - `infobanjir-rag` (Python FastAPI + ChromaDB vector retrieval + LLM-Based Responses)
 
-## Live Demo
-
-- Demo URL: `http://ec2-54-169-123-68.ap-southeast-1.compute.amazonaws.com/`
-- Public demo note:
-  - This deployment is an early preview and still under active iteration.
-  - The public environment runs in limited mode with conservative defaults due to deployment cost constraints.
-  - LLM generation is disabled in the live demo (`RAG_USE_LLM=false`), so responses are retrieval/deterministic-first rather than fully generative.
-  - Outputs are operational guidance and heuristic summaries, not official flood warnings.
-
 ## Why This Project
 
 - Converts live flood observations from the flood monitoring system which I have built into readable operational insights.
