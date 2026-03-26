@@ -63,14 +63,12 @@ public class ExpressApiClient {
         String body = response.getBody();
         if (body == null || body.isBlank()) {
             log.warn("Express {} response body empty for state={}", label, state);
-            System.out.println("Express " + label + " response body empty for state=" + state);
             return emptyResponse(type);
         }
         try {
             return objectMapper.readValue(body, type);
         } catch (Exception ex) {
             log.warn("Express {} response parse failed for state={} len={}", label, state, body.length());
-            System.out.println("Express " + label + " response parse failed for state=" + state + " len=" + body.length());
             return emptyResponse(type);
         }
     }
