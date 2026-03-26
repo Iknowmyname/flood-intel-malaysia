@@ -21,7 +21,7 @@ public class CorrelationIdInterceptor implements ClientHttpRequestInterceptor {
     @Override 
     public ClientHttpResponse intercept (@NonNull HttpRequest request, byte [] body, ClientHttpRequestExecution execution) throws IOException {
 
-        String correlationId = MDC.get("correlation-id");
+        String correlationId = MDC.get("correlationId");
         // Propagate correlation id to downstream services for traceability.
         if (correlationId != null) {
             request.getHeaders().add(CORRELATION_HEADER, correlationId);

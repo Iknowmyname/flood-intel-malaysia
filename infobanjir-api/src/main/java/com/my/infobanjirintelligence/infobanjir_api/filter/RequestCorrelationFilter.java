@@ -31,7 +31,7 @@ public class RequestCorrelationFilter extends OncePerRequestFilter{
         String correlationId = extractOrGenerateCorrelationId(request);
 
         // Store correlation id in MDC so logs and downstream calls can use it.
-        MDC.put(CORRELATION_ID_HEADER, correlationId);
+        MDC.put(CORRELATION_ID_KEY, correlationId);
 
         try {
             response.setHeader(CORRELATION_ID_HEADER, correlationId);
