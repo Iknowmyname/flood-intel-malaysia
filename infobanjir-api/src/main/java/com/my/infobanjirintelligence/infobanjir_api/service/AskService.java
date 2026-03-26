@@ -184,7 +184,6 @@ public class AskService {
         try {
             return callRagService(question);
         } catch (Exception e) {
-            log.warn("AUTO mode: RAG failed, falling back to SQL. question='{}'", question, e);
             return callSqlOnly(question);
         }
     }
