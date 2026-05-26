@@ -36,7 +36,7 @@ public class ExpressApiClient {
 
     public RainfallResponse getLatestRainfall(String state, Integer limit) {
         String upstreamState = toUpstreamStateCode(state);
-        String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
+        String url = UriComponentsBuilder.fromUriString(baseUrl)
             .path("/api/readings/latest/rain")
             .queryParamIfPresent("state", Optional.ofNullable(upstreamState))
             .queryParamIfPresent("limit", Optional.ofNullable(limit))
@@ -47,7 +47,7 @@ public class ExpressApiClient {
 
     public WaterLevelResponse getLatestWaterLevel(String state, Integer limit) {
         String upstreamState = toUpstreamStateCode(state);
-        String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
+        String url = UriComponentsBuilder.fromUriString(baseUrl)
             .path("/api/readings/latest/water_level")
             .queryParamIfPresent("state", Optional.ofNullable(upstreamState))
             .queryParamIfPresent("limit", Optional.ofNullable(limit))

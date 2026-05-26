@@ -10,16 +10,13 @@ import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
 
-import io.micrometer.common.lang.NonNull;
-
 @Component
 public class CorrelationIdInterceptor implements ClientHttpRequestInterceptor {
 
     private static final String CORRELATION_HEADER = "X-Correlation-ID";
 
-    @SuppressWarnings("null")
     @Override 
-    public ClientHttpResponse intercept (@NonNull HttpRequest request, byte [] body, ClientHttpRequestExecution execution) throws IOException {
+    public ClientHttpResponse intercept (HttpRequest request, byte [] body, ClientHttpRequestExecution execution) throws IOException {
 
         String correlationId = MDC.get("correlationId");
         // Propagate correlation id to downstream services for traceability.
