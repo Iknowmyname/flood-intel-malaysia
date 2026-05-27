@@ -27,8 +27,15 @@ public class AskService {
     private final ExpressApiClient expressApiClient;
     private final RagClient ragClient;
 
-    @Value("${app.mode:auto}")
-    private String mode;
+    public enum Mode {
+        RAG, 
+        SQL,
+        AUTO
+    }
+
+
+    @Value("${app.mode:AUTO}")
+    private Mode mode;
 
     public AskService(ExpressApiClient expressApiClient, RagClient ragClient) {
         this.expressApiClient = expressApiClient;
@@ -53,15 +60,15 @@ public class AskService {
         double confidence;
 
         try {
-            switch (mode.toLowerCase()) {
-                case "rag" -> {
+            switch (mode) {
+                case RAG -> {
                     try {
                         answer = callRagService(question);
                     } catch (Exception e) {
                         answer = callSqlOnly(question);
                     }
                 }
-                case "sql" -> answer = callSqlOnly(question);
+                case SQL -> answer = callSqlOnly(question);
                 default -> answer = callAuto(question);
             }
             confidence = inferConfidence(answer);
