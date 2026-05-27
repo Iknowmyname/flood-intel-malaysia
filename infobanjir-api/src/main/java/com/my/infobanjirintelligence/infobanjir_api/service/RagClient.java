@@ -1,21 +1,24 @@
 package com.my.infobanjirintelligence.infobanjir_api.service;
 
+import java.util.Collections;
 import java.util.Map;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.util.Assert;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.my.infobanjirintelligence.infobanjir_api.model.RagAskResponse;
 
 @Service
@@ -23,24 +26,20 @@ public class RagClient {
 
     private static final Logger log = LoggerFactory.getLogger(RagClient.class);
 
-    private final HttpClient httpClient;
+    private final RestTemplate restTemplate;
     private final String baseUrl;
-    private final ObjectMapper objectMapper;
+    
 
-    public RagClient(
-        ObjectMapper objectMapper,
-        @Value("${services.rag.base-url}") String baseUrl
-    ) {
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .version(HttpClient.Version.HTTP_1_1)
-            .build();
-        this.objectMapper = objectMapper;
+    public RagClient(RestTemplate restTemplate,  @Value("${services.rag.base-url}") String baseUrl) {
+        this.restTemplate = restTemplate;
+        Assert.hasText(baseUrl, "base-url must be configured in application properties!");
         this.baseUrl = baseUrl;
     }
 
     public RagAskResponse ask(String question) {
-        String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
+
+    
+        String url = UriComponentsBuilder.fromUriString(baseUrl)
             .path("/rag/ask")
             .toUriString();
 
@@ -49,32 +48,28 @@ public class RagClient {
             throw new IllegalArgumentException("Question must not be blank");
         }
 
-        String payloadJson;
-        try {
-            payloadJson = objectMapper.writeValueAsString(Map.of("question", normalizedQuestion));
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Failed to serialize RAG payload", ex);
-        }
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json; charset=utf-8")
-                .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(30))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(payloadJson.getBytes(StandardCharsets.UTF_8)))
-                .build();
+           
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("RAG request failed status={} body={}", response.statusCode(), response.body());
-                throw new IllegalStateException("RAG service request failed with status " + response.statusCode());
+            Map<String, String> body = Map.of("question", normalizedQuestion);
+
+            HttpEntity<Map<String,String>> request = new HttpEntity<>(body, headers);
+            log.info("Correlation id at RagClient :" + MDC.get("correlationId"));
+
+            ResponseEntity<RagAskResponse> response = restTemplate.exchange(url,HttpMethod.POST, request, RagAskResponse.class);
+            
+            if (response.getBody() == null) {
+                throw new IllegalStateException("RAG service returned an empty response!");
             }
-            return objectMapper.readValue(response.body(), RagAskResponse.class);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("RAG service request interrupted", ex);
-        } catch (Exception ex) {
+            return response.getBody();
+        } catch (HttpStatusCodeException ex) {
+            throw new IllegalStateException("RAG service bad status code", ex);
+        } catch (ResourceAccessException ex) {
             throw new IllegalStateException("RAG service request failed", ex);
         }
     }
