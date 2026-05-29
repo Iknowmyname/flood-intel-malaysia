@@ -1,15 +1,18 @@
 import os
 
-# Default runtime settings for local development (no env vars required).
+from dotenv import load_dotenv
+
+load_dotenv()
+
 os.environ.setdefault("CHROMA_TELEMETRY", "false")
 os.environ.setdefault("CHROMA_ANONYMIZED_TELEMETRY", "false")
 os.environ.setdefault("POSTHOG_DISABLED", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
-EXPRESS_BASE_URL = os.getenv("EXPRESS_BASE_URL", "https://flood-monitoring-system.onrender.com")
+EXPRESS_BASE_URL = os.getenv("EXPRESS_BASE_URL")
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
 OLLAMA_RETRIES = int(os.getenv("OLLAMA_RETRIES", "2"))
