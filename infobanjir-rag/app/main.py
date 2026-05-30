@@ -155,6 +155,7 @@ def rag_ingest(payload: RagIngestRequest) -> RagIngestResponse:
     ingest_documents(docs, replace=False)
     return RagIngestResponse(ingested=len(docs), total=len(load_documents()), source="manual")
 
+#test
 
 @app.post("/rag/ask", response_model=RagAskResponse)
 def rag_ask(payload: RagAskRequest) -> RagAskResponse:
