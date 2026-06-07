@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 
 from .config import (
@@ -16,13 +16,26 @@ from .config import (
     RAG_USE_LLM,
 )
 from .ingest import ingest_from_express
-from .llm_client import call_ollama, check_ollama_health
+from .llm_client import call_llm, check_ollama_health
 from .rag_context import build_context, build_summary_from_hits, infer_state_from_question, parse_date_range
 from .rag_store import get_stats, ingest_documents, load_documents, retrieve_keyword, retrieve_semantic
 
 
 app = FastAPI(title="HydroIntel MY RAG", version="0.1.0")
+
 log = logging.getLogger("infobanjir_rag")
+log.setLevel(logging.INFO)
+log.propagate=False
+
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+
+if not log.handlers:
+    log.addHandler(handler)
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 _INGEST_STOP_EVENT = threading.Event()
 _INGEST_THREAD: threading.Thread | None = None
 
@@ -59,7 +72,6 @@ class RagCitation(BaseModel):
 class RagAskResponse(BaseModel):
     answer: str
     citations: List[RagCitation]
-    confidence: float
     request_id: str
     timestamp: str
 
@@ -155,11 +167,21 @@ def rag_ingest(payload: RagIngestRequest) -> RagIngestResponse:
     ingest_documents(docs, replace=False)
     return RagIngestResponse(ingested=len(docs), total=len(load_documents()), source="manual")
 
-#test
+
 
 @app.post("/rag/ask", response_model=RagAskResponse)
-def rag_ask(payload: RagAskRequest) -> RagAskResponse:
+def rag_ask(payload: RagAskRequest, request: Request) -> RagAskResponse:
+
+    correlation_id = request.headers.get("X-Correlation-ID", "Null")
+    log.info(f"Request with correlation id {correlation_id} has been received by Rag Service")
+
+    start = time.perf_counter()
     documents = load_documents()
+    log.info({
+        "event": "load_documents completed",
+        "duration_ms": (time.perf_counter() - start)
+    })
+
     question = payload.question or ""
     question_lower = question.lower()
     state = infer_state_from_question(question, documents)
@@ -169,6 +191,7 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
     )
 
     if is_flood_question:
+        start = time.perf_counter()
         semantic_hits = retrieve_semantic(
             question,
             top_k=RAG_TOP_K,
@@ -178,6 +201,10 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
             date_to=date_to,
             min_score=RAG_MIN_SCORE,
         )
+        log.info({
+        "event": "retrieve_semantic completed",
+        "duration_ms": (time.perf_counter() - start)
+    })
         keyword_hits = retrieve_keyword(
             question,
             top_k=RAG_TOP_K,
@@ -212,18 +239,22 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
         context = build_context(hits)
         if RAG_USE_LLM:
             try:
-                answer = call_ollama(question, context)
-                confidence = 0.55
+                start = time.perf_counter()
+                answer = call_llm(question, context)
+                log.info({
+                    "event": "llm_call completed",
+                    "duration_ms": (time.perf_counter() - start)
+                })
             except Exception:
                 log.exception("LLM call failed; falling back to summary")
                 answer = "LLM unavailable; " + build_summary_from_hits(hits)
-                confidence = 0.35
+                
         else:
             answer = build_summary_from_hits(hits)
-            confidence = 0.35
+            
     else:
         answer = "No matching sources found in the local knowledge base."
-        confidence = 0.1
+        
 
     citations = [
         RagCitation(
@@ -236,8 +267,7 @@ def rag_ask(payload: RagAskRequest) -> RagAskResponse:
     return RagAskResponse(
         answer=answer,
         citations=citations,
-        confidence=confidence,
-        request_id="stub",
+        request_id=correlation_id,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
 
