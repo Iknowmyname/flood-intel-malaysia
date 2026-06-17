@@ -23,7 +23,7 @@ from .rag_store import get_stats, ingest_documents, load_documents, retrieve_key
 
 app = FastAPI(title="HydroIntel MY RAG", version="0.1.0")
 
-log = logging.getLogger("infobanjir_rag")
+log = logging.getLogger("app")
 log.setLevel(logging.INFO)
 log.propagate=False
 
