@@ -21,7 +21,7 @@ RAG_USE_LLM = os.getenv("RAG_USE_LLM", "true").lower() in ("1", "true", "yes")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
 RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.1"))
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "chroma")
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "readings")
