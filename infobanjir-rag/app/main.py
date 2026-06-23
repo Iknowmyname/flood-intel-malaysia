@@ -7,6 +7,8 @@ from typing import List
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 
+from .planner_models import QueryPlan
+
 from .config import (
     AUTO_INGEST_ON_STARTUP,
     AUTO_INGEST_REFRESH_SECONDS,
@@ -16,7 +18,7 @@ from .config import (
     RAG_USE_LLM,
 )
 from .ingest import ingest_from_express
-from .llm_client import call_llm, check_ollama_health
+from .llm_client import call_llm, plan_query
 from .rag_context import build_context, build_summary_from_hits, infer_state_from_question, parse_date_range
 from .rag_store import get_stats, ingest_documents, load_documents, retrieve_keyword, retrieve_semantic
 
@@ -93,6 +95,17 @@ class RagIngestResponse(BaseModel):
     source: str
 
 
+class QueryPlannerRequest(BaseModel):
+    request_id: str
+    question: str
+    
+
+
+@app.post("/query_planner")
+def get_plan(query_request: QueryPlannerRequest) -> QueryPlan:
+    return plan_query(query_request.question)
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -100,25 +113,6 @@ def health() -> dict:
         "service": "infobanjir-rag",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
-
-@app.get("/rag/health")
-def rag_health() -> dict:
-    return health()
-
-
-@app.get("/health/llm")
-def health_llm() -> dict:
-    return {
-        "status": "ok" if check_ollama_health() else "unavailable",
-        "service": "ollama",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-@app.get("/rag/health/llm")
-def rag_health_llm() -> dict:
-    return health_llm()
 
 
 @app.get("/rag/stats")

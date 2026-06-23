@@ -1,5 +1,4 @@
-from ..llm_models import LlmResponse
-from ..prompt_builder import build_prompt
+from ..llm_models import LlmResponse, LlmPrompt
 from pydantic import BaseModel
 import requests
 
@@ -29,9 +28,8 @@ class OllamaAdapter():
         self.retries = retries
 
 
-    def generate(self, question: str, context: str) -> LlmResponse:
+    def generate(self, prompt: LlmPrompt, json_mode: bool = False) -> LlmResponse:
 
-        prompt = build_prompt(question, context)
 
         payload = {
             "model": self.model,
@@ -43,6 +41,9 @@ class OllamaAdapter():
             ]
 
         }
+
+        if json_mode:
+            payload["format"] = "json"
 
         for attempt in range(1, self.retries + 2):
             
